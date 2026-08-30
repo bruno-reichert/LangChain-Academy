@@ -1,0 +1,239 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: **/*.ipynb, **/*.py, **/*.md, **/*.json, **/*.txt
+- Files matching these patterns are excluded: **/lc-academy-env/**
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+agent.py
+langgraph.json
+requirements.txt
+router.py
+simple.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="agent.py">
+from langchain_core.messages import SystemMessage
+from langchain_openai import ChatOpenAI
+
+from langgraph.graph import START, StateGraph, MessagesState
+from langgraph.prebuilt import tools_condition, ToolNode
+
+def add(a: int, b: int) -> int:
+    """Adds a and b.
+
+    Args:
+        a: first int
+        b: second int
+    """
+    return a + b
+
+def multiply(a: int, b: int) -> int:
+    """Multiplies a and b.
+
+    Args:
+        a: first int
+        b: second int
+    """
+    return a * b
+
+def divide(a: int, b: int) -> float:
+    """Divide a and b.
+
+    Args:
+        a: first int
+        b: second int
+    """
+    return a / b
+
+tools = [add, multiply, divide]
+
+# Define LLM with bound tools
+llm = ChatOpenAI(model="gpt-4o")
+llm_with_tools = llm.bind_tools(tools)
+
+# System message
+sys_msg = SystemMessage(content="You are a helpful assistant tasked with writing performing arithmetic on a set of inputs.")
+
+# Node
+def assistant(state: MessagesState):
+   return {"messages": [llm_with_tools.invoke([sys_msg] + state["messages"])]}
+
+# Build graph
+builder = StateGraph(MessagesState)
+builder.add_node("assistant", assistant)
+builder.add_node("tools", ToolNode(tools))
+builder.add_edge(START, "assistant")
+builder.add_conditional_edges(
+    "assistant",
+    # If the latest message (result) from assistant is a tool call -> tools_condition routes to tools
+    # If the latest message (result) from assistant is a not a tool call -> tools_condition routes to END
+    tools_condition,
+)
+builder.add_edge("tools", "assistant")
+
+# Compile graph
+graph = builder.compile()
+</file>
+
+<file path="langgraph.json">
+{
+  "dockerfile_lines": [],
+  "graphs": {
+    "simple_graph": "./simple.py:graph",
+    "router": "./router.py:graph",
+    "agent": "./agent.py:graph"
+  },
+  "env": "./.env",
+  "python_version": "3.11",
+  "dependencies": [
+    "."
+  ]
+}
+</file>
+
+<file path="requirements.txt">
+langgraph
+langgraph-prebuilt
+langchain-core>=1.2.28
+langchain-community
+langchain-openai>=1.1.14
+langchain-text-splitters>=1.1.2
+langsmith>=0.7.31
+aiohttp>=3.13.4
+</file>
+
+<file path="router.py">
+from langchain_openai import ChatOpenAI
+from langgraph.graph import MessagesState
+from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode, tools_condition
+
+# Tool
+def multiply(a: int, b: int) -> int:
+    """Multiplies a and b.
+
+    Args:
+        a: first int
+        b: second int
+    """
+    return a * b
+
+# LLM with bound tool
+llm = ChatOpenAI(model="gpt-4o")
+llm_with_tools = llm.bind_tools([multiply])
+
+# Node
+def tool_calling_llm(state: MessagesState):
+    return {"messages": [llm_with_tools.invoke(state["messages"])]}
+
+# Build graph
+builder = StateGraph(MessagesState)
+builder.add_node("tool_calling_llm", tool_calling_llm)
+builder.add_node("tools", ToolNode([multiply]))
+builder.add_edge(START, "tool_calling_llm")
+builder.add_conditional_edges(
+    "tool_calling_llm",
+    # If the latest message (result) from assistant is a tool call -> tools_condition routes to tools
+    # If the latest message (result) from assistant is a not a tool call -> tools_condition routes to END
+    tools_condition,
+)
+builder.add_edge("tools", END)
+
+# Compile graph
+graph = builder.compile()
+</file>
+
+<file path="simple.py">
+import random 
+from typing import Literal
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+
+# State
+class State(TypedDict):
+    graph_state: str
+
+# Conditional edge
+def decide_mood(state) -> Literal["node_2", "node_3"]:
+    
+    # Often, we will use state to decide on the next node to visit
+    user_input = state['graph_state'] 
+    
+    # Here, let's just do a 50 / 50 split between nodes 2, 3
+    if random.random() < 0.5:
+
+        # 50% of the time, we return Node 2
+        return "node_2"
+    
+    # 50% of the time, we return Node 3
+    return "node_3"
+
+# Nodes
+def node_1(state):
+    print("---Node 1---")
+    return {"graph_state":state['graph_state'] +" I am"}
+
+def node_2(state):
+    print("---Node 2---")
+    return {"graph_state":state['graph_state'] +" happy!"}
+
+def node_3(state):
+    print("---Node 3---")
+    return {"graph_state":state['graph_state'] +" sad!"}
+
+# Build graph
+builder = StateGraph(State)
+builder.add_node("node_1", node_1)
+builder.add_node("node_2", node_2)
+builder.add_node("node_3", node_3)
+builder.add_edge(START, "node_1")
+builder.add_conditional_edges("node_1", decide_mood)
+builder.add_edge("node_2", END)
+builder.add_edge("node_3", END)
+
+# Compile graph
+graph = builder.compile()
+</file>
+
+</files>
