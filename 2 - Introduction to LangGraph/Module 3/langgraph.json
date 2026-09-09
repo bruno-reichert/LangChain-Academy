@@ -2,7 +2,8 @@
     "dockerfile_lines": [],
     "graphs": {
       "streaming": "./1streaming.py:graph",
-      "breakpoints": "./2breakpoints.py:graph"
+      "breakpoints": "./2breakpoints.py:graph",
+      "edit_state_and_human_feedback": "./3editstatehumanfeedback.py:graph"
     },
     "env": "./.env",
     "python_version": "3.11",
