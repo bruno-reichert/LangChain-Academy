@@ -1,0 +1,1488 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+11mcp.py
+12travelagent.py
+2contextandstate.ipynb
+3multiagentsystems.ipynb
+4weddingplanner.ipynb
+contextandstateconverted.py
+mcp_server.py
+multiagentsystemsconverted.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="11mcp.py">
+import os
+import sys
+import asyncio
+from dotenv import load_dotenv, find_dotenv # type: ignore
+from langchain_mcp_adapters.client import MultiServerMCPClient # type: ignore
+from langchain.chat_models import init_chat_model # type: ignore
+from langchain.agents import create_agent # type: ignore
+
+load_dotenv(find_dotenv())
+
+async def main():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    server_path = os.path.join(current_dir, "mcp_server.py")
+
+    # 1. Connect to BOTH MCP servers simultaneously!
+    client = MultiServerMCPClient({
+        "local_server": {
+            "transport": "stdio",
+            "command": sys.executable,
+            "args": [server_path]
+        },
+        "time": {
+            "transport": "stdio",
+            "command": "uv",
+            "args": [
+                "run",
+                "python",
+                "-m",
+                "mcp_server_time",
+                "--local-timezone=America/New_York"
+            ]
+        }
+    })
+
+    print("🔌 Connecting to BOTH MCP servers (local_server + time)...")
+    
+    # 2. Fetch all tools from all servers
+    tools = await client.get_tools()
+    print(f"\n✅ Successfully loaded {len(tools)} total tools:")
+    for t in tools:
+        print(f"  👉 {t.name}: {t.description}")
+
+    # 3. Initialize Gemini
+    gemini_lite = init_chat_model(
+        model="models/gemini-3.5-flash-lite",
+        model_provider="google_genai"
+    )
+
+    # 4. Create Agent equipped with ALL tools
+    agent = create_agent(
+        model=gemini_lite,
+        tools=tools,
+        system_prompt="You are a helpful assistant with access to web search, time, and documentation tools."
+    )
+
+    # 5. Test the Time Tool!
+    print("\n🤖 Asking agent for the time...")
+    question = "What is the current time in New York, and what is the time in Tokyo right now?"
+    
+    response = await agent.ainvoke({
+        "messages": [{"role": "user", "content": question}]
+    })
+
+    print("\n=== AGENT RESPONSE ===")
+    ans = response["messages"][-1].content
+    print(ans[0]['text'] if isinstance(ans, list) else ans)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path="12travelagent.py">
+import asyncio
+from dotenv import load_dotenv, find_dotenv
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain.messages import HumanMessage
+
+load_dotenv(find_dotenv())
+
+async def main():
+    # 1. Connect to Kiwi Travel MCP server over HTTP!
+    client = MultiServerMCPClient(
+        {
+            "travel_server": {
+                "transport": "streamable_http",
+                "url": "https://mcp.kiwi.com"
+            }
+        }
+    )
+
+    print("✈️ Connecting to Kiwi Travel MCP server...")
+    tools = await client.get_tools()
+    print(f"✅ Loaded {len(tools)} travel tools!")
+
+    # 2. Initialize Gemini
+    gemini_lite = init_chat_model(
+        model="models/gemini-3.5-flash-lite",
+        model_provider="google_genai"
+    )
+
+    # 3. Create Travel Agent (with Memory checkpointer)
+    agent = create_agent(
+        model=gemini_lite,
+        tools=tools,
+        system_prompt="You are a travel agent. No follow up questions.",
+        checkpointer=InMemorySaver()
+    )
+
+    config = {"configurable": {"thread_id": "travel_1"}}
+
+    # 4. Search for flights!
+    print("🔎 Searching for flights from SFO to Tokyo...")
+    response = await agent.ainvoke(
+        {"messages": [HumanMessage(content="Get me a direct flight from San Francisco to Tokyo on March 31st")]},
+        config=config
+    )
+
+    print("\n=== FLIGHT DETAILS ===")
+    ans = response["messages"][-1].content
+    print(ans[0]['text'] if isinstance(ans, list) else ans)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path="2contextandstate.ipynb">
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "56f81e82",
+   "metadata": {},
+   "source": [
+    "# Lesson 2.2: Context and State"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "39d73ce7",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "True"
+      ]
+     },
+     "execution_count": 1,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "from dotenv import load_dotenv\n",
+    "\n",
+    "load_dotenv()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "22816dfe",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from dataclasses import dataclass\n",
+    "\n",
+    "@dataclass\n",
+    "class ColourContext:\n",
+    "    favourite_colour: str = \"blue\"\n",
+    "    least_favourite_colour: str = \"red\""
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "fe9aea1c",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain.agents import create_agent\n",
+    "from langchain.chat_models import init_chat_model\n",
+    "\n",
+    "gemini_lite = init_chat_model(\n",
+    "        model=\"models/gemini-3.5-flash-lite\",\n",
+    "        model_provider=\"google_genai\"\n",
+    "    )\n",
+    "\n",
+    "agent = create_agent(\n",
+    "    model=gemini_lite,\n",
+    "    context_schema=ColourContext,\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "00332d12",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain.messages import HumanMessage\n",
+    "\n",
+    "response = agent.invoke(\n",
+    "    {\"messages\": [HumanMessage(content=\"What is my favourite colour?\")]},\n",
+    "    context=ColourContext()\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "d3ae169d",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "I don't have access to your personal information or memories, so I don't know your favourite colour! \n",
+      "\n",
+      "If you tell me what it is, I can remember it for our conversation. What is it?\n"
+     ]
+    }
+   ],
+   "source": [
+    "ans = response[\"messages\"][-1].content\n",
+    "print(ans[0]['text'] if isinstance(ans, list) else ans)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "8682863a",
+   "metadata": {},
+   "source": [
+    "# 2. Accessing context"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "56b79db3",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain.tools import tool, ToolRuntime\n",
+    "\n",
+    "@tool\n",
+    "def get_favourite_colour(runtime: ToolRuntime[ColourContext]) -> str:\n",
+    "    \"\"\"Get the favourite colour of the user\"\"\"\n",
+    "    return runtime.context.favourite_colour\n",
+    "\n",
+    "@tool\n",
+    "def get_least_favourite_colour(runtime: ToolRuntime[ColourContext]) -> str:\n",
+    "    \"\"\"Get the least favourite colour of the user\"\"\"\n",
+    "    return runtime.context.least_favourite_colour"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "77388a22",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain.agents import create_agent\n",
+    "from langchain.chat_models import init_chat_model\n",
+    "\n",
+    "gemini_lite = init_chat_model(\n",
+    "        model=\"models/gemini-3.5-flash-lite\",\n",
+    "        model_provider=\"google_genai\",\n",
+    "    )\n",
+    "\n",
+    "agent = create_agent(\n",
+    "    model=gemini_lite,\n",
+    "    context_schema=ColourContext,\n",
+    "    tools=[get_favourite_colour, get_least_favourite_colour]\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "9d3d1818",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Your favourite colour is blue.\n"
+     ]
+    }
+   ],
+   "source": [
+    "response = agent.invoke(\n",
+    "    {\"messages\": [HumanMessage(content=\"What is my favourite colour?\")]},\n",
+    "    context=ColourContext()\n",
+    ")\n",
+    "\n",
+    "ans = response[\"messages\"][-1].content\n",
+    "print(ans[0]['text'] if isinstance(ans, list) else ans)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "id": "ab5c4366",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Your favourite colour is green!\n"
+     ]
+    }
+   ],
+   "source": [
+    "response = agent.invoke(\n",
+    "    {\"messages\": [HumanMessage(content=\"What is my favourite colour?\")]},\n",
+    "    context=ColourContext(favourite_colour=\"green\")\n",
+    ")\n",
+    "\n",
+    "ans = response[\"messages\"][-1].content\n",
+    "print(ans[0]['text'] if isinstance(ans, list) else ans)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "13ef2813",
+   "metadata": {},
+   "source": [
+    "# 3. State"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "id": "9148a98a",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain.agents import AgentState\n",
+    "\n",
+    "class CustomState(AgentState):\n",
+    "    favourite_colour: str"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "id": "52b45fac",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain.tools import tool, ToolRuntime\n",
+    "from langgraph.types import Command\n",
+    "from langchain.messages import ToolMessage\n",
+    "\n",
+    "@tool\n",
+    "def update_favourite_colour(favourite_colour: str, runtime: ToolRuntime) -> Command:\n",
+    "    \"\"\"Update the favourite colour of the user in the state once they've revealed it.\"\"\"\n",
+    "    return Command(update={\n",
+    "        \"favourite_colour\": favourite_colour, \n",
+    "        \"messages\": [ToolMessage(\"Successfully updated favourite colour\", tool_call_id=runtime.tool_call_id)]}\n",
+    "        )\n",
+    "\n",
+    "@tool\n",
+    "def read_favourite_colour(runtime: ToolRuntime) -> str:\n",
+    "    \"\"\"Read the favourite colour of the user from the state.\"\"\"\n",
+    "    try:\n",
+    "        return runtime.state[\"favourite_colour\"]\n",
+    "    except KeyError:\n",
+    "        return \"No favourite colour found in state\""
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "id": "4dee4822",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain.agents import create_agent\n",
+    "from langgraph.checkpoint.memory import InMemorySaver\n",
+    "\n",
+    "gemini_lite = init_chat_model(\n",
+    "        model=\"models/gemini-3.5-flash-lite\",\n",
+    "        model_provider=\"google_genai\",\n",
+    "    )\n",
+    "\n",
+    "agent = create_agent(\n",
+    "    gemini_lite,\n",
+    "    tools=[update_favourite_colour],\n",
+    "    checkpointer=InMemorySaver(),\n",
+    "    state_schema=CustomState\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "id": "c577ed5a",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "That's a lovely colour! I've saved that in my memory. Is there anything else you'd like to chat about today?\n"
+     ]
+    }
+   ],
+   "source": [
+    "response = agent.invoke(\n",
+    "    { \"messages\": [HumanMessage(content=\"Hi! My favourite colour is green!\")]},\n",
+    "    {\"configurable\": {\"thread_id\": \"1\"}}\n",
+    ")\n",
+    "\n",
+    "ans = response[\"messages\"][-1].content\n",
+    "print(ans[0]['text'] if isinstance(ans, list) else ans)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "id": "3e68ba52",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Your favourite colour is green!\n"
+     ]
+    }
+   ],
+   "source": [
+    "response = agent.invoke(\n",
+    "    { \"messages\": [HumanMessage(content=\"What's my favourite colour?\")]},\n",
+    "    {\"configurable\": {\"thread_id\": \"1\"}}\n",
+    ")\n",
+    "\n",
+    "ans = response[\"messages\"][-1].content\n",
+    "print(ans[0]['text'] if isinstance(ans, list) else ans)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "25b67ff3",
+   "metadata": {},
+   "source": [
+    "#"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "lc-foundations (3.13.1.final.0)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.13.1"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
+</file>
+
+<file path="3multiagentsystems.ipynb">
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "a94fdf8f",
+   "metadata": {},
+   "source": [
+    "# Lesson 2.3: Multi-Agent Systems"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "3d62b24c",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "True"
+      ]
+     },
+     "execution_count": 1,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "from dotenv import load_dotenv\n",
+    "\n",
+    "load_dotenv()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "fb801a61",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain.tools import tool\n",
+    "\n",
+    "@tool\n",
+    "def square_root(x: float) -> float:\n",
+    "    \"\"\"Calculate the square root of a number\"\"\"\n",
+    "    return x ** 0.5\n",
+    "\n",
+    "@tool\n",
+    "def square(x: float) -> float:\n",
+    "    \"\"\"Calculate the square of a number\"\"\"\n",
+    "    return x ** 2"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "eededecd",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain.agents import create_agent\n",
+    "from langchain.chat_models import init_chat_model\n",
+    "\n",
+    "gemini_lite = init_chat_model(\n",
+    "        model=\"models/gemini-3.5-flash-lite\",\n",
+    "        model_provider=\"google_genai\"\n",
+    "    )\n",
+    "\n",
+    "subagent_1 = create_agent(\n",
+    "    model=gemini_lite,\n",
+    "    tools=[square_root]\n",
+    ")\n",
+    "\n",
+    "subagent_2 = create_agent(\n",
+    "    model=gemini_lite,\n",
+    "    tools=[square]\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "e68f1f5e",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain.messages import HumanMessage\n",
+    "\n",
+    "@tool\n",
+    "def call_subagent_1(x: float) -> float:\n",
+    "    \"\"\"Call subagent 1 in order to calculate the square root of a number\"\"\"\n",
+    "    response = subagent_1.invoke({\"messages\": [HumanMessage(content=f\"Calculate the square root of {x}\")]})\n",
+    "    return response[\"messages\"][-1].content\n",
+    "\n",
+    "@tool\n",
+    "def call_subagent_2(x: float) -> float:\n",
+    "    \"\"\"Call subagent 2 in order to calculate the square of a number\"\"\"\n",
+    "    response = subagent_2.invoke({\"messages\": [HumanMessage(content=f\"Calculate the square of {x}\")]})\n",
+    "    return response[\"messages\"][-1].content\n",
+    "\n",
+    "## Creating the main agent\n",
+    "\n",
+    "main_agent = create_agent(\n",
+    "    model=gemini_lite,\n",
+    "    tools=[call_subagent_1, call_subagent_2],\n",
+    "    system_prompt=\"You are a helpful assistant who can call subagents to calculate the square root or square of a number.\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "d14bac42",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "question = \"What is the square root of 456?\"\n",
+    "\n",
+    "response = main_agent.invoke({\"messages\": [HumanMessage(content=question)]})"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "8a108ca3",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "The square root of 456 is approximately **21.354**.\n"
+     ]
+    }
+   ],
+   "source": [
+    "ans = response[\"messages\"][-1].content\n",
+    "print(ans[0]['text'] if isinstance(ans, list) else ans)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "dac253d5",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "question = \"What is the the result of 21 squared?\"\n",
+    "\n",
+    "response = main_agent.invoke({\"messages\": [HumanMessage(content=question)]})"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "0ca85e70",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "The result of 21 squared is 441.\n"
+     ]
+    }
+   ],
+   "source": [
+    "ans = response[\"messages\"][-1].content\n",
+    "print(ans[0]['text'] if isinstance(ans, list) else ans)"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "lc-foundations (3.13.1.final.0)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.13.1"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
+</file>
+
+<file path="4weddingplanner.ipynb">
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "7caa804b",
+   "metadata": {},
+   "source": [
+    "# Project 2: Wedding planner"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "10141553",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "True"
+      ]
+     },
+     "execution_count": 9,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "from dotenv import load_dotenv\n",
+    "\n",
+    "load_dotenv()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "b8da8234",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "✅ Libraries and environment loaded!\n"
+     ]
+    }
+   ],
+   "source": [
+    "import asyncio\n",
+    "import os\n",
+    "from pprint import pprint\n",
+    "from typing import Any, Dict\n",
+    "\n",
+    "from dotenv import find_dotenv, load_dotenv\n",
+    "from langchain.agents import AgentState, create_agent\n",
+    "from langchain.chat_models import init_chat_model\n",
+    "from langchain.messages import AIMessage, HumanMessage, ToolMessage\n",
+    "from langchain.tools import ToolRuntime, tool\n",
+    "from langchain_mcp_adapters.client import MultiServerMCPClient\n",
+    "from langgraph.checkpoint.memory import InMemorySaver\n",
+    "from langgraph.types import Command\n",
+    "from mcp.shared.exceptions import McpError\n",
+    "from mcp.types import CallToolResult, TextContent\n",
+    "from tavily import TavilyClient\n",
+    "\n",
+    "# Load environment variables\n",
+    "load_dotenv(find_dotenv())\n",
+    "\n",
+    "print(\"✅ Libraries and environment loaded!\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "b29ece84",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "✈️ Loaded 2 Kiwi flight tools with Retry Interceptor!\n"
+     ]
+    }
+   ],
+   "source": [
+    "class RetryMCPInterceptor:\n",
+    "    \"\"\"Intercepts MCP tool calls: retries transient network failures with exponential backoff.\"\"\"\n",
+    "\n",
+    "    def __init__(self, max_retries: int = 3):\n",
+    "        self.max_retries = max_retries\n",
+    "\n",
+    "    async def __call__(self, request, handler):\n",
+    "        last_error = None\n",
+    "        for attempt in range(self.max_retries):\n",
+    "            try:\n",
+    "                return await handler(request)\n",
+    "            except McpError as exc:\n",
+    "                last_error = exc\n",
+    "                if exc.error.code not in {-32603}:\n",
+    "                    return CallToolResult(\n",
+    "                        content=[\n",
+    "                            TextContent(\n",
+    "                                type=\"text\",\n",
+    "                                text=f\"Tool error (non-retryable): {exc}\",\n",
+    "                            )\n",
+    "                        ],\n",
+    "                        isError=False,\n",
+    "                    )\n",
+    "            except Exception as exc:\n",
+    "                last_error = exc\n",
+    "\n",
+    "            if attempt < self.max_retries - 1:\n",
+    "                await asyncio.sleep(2**attempt)\n",
+    "\n",
+    "        return CallToolResult(\n",
+    "            content=[\n",
+    "                TextContent(\n",
+    "                    type=\"text\",\n",
+    "                    text=f\"Tool failed after {self.max_retries} attempts: {last_error}\",\n",
+    "                )\n",
+    "            ],\n",
+    "            isError=False,\n",
+    "        )\n",
+    "\n",
+    "\n",
+    "# Connect to Kiwi Travel MCP over HTTP with the retry interceptor\n",
+    "mcp_client = MultiServerMCPClient(\n",
+    "    {\n",
+    "        \"travel_server\": {\n",
+    "            \"transport\": \"streamable_http\",\n",
+    "            \"url\": \"https://mcp.kiwi.com\",\n",
+    "        }\n",
+    "    },\n",
+    "    tool_interceptors=[RetryMCPInterceptor()],\n",
+    ")\n",
+    "\n",
+    "travel_tools = await mcp_client.get_tools()\n",
+    "print(f\"✈️ Loaded {len(travel_tools)} Kiwi flight tools with Retry Interceptor!\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "id": "9ef79017",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "🔍 Tavily Search tool and WeddingState schema ready!\n"
+     ]
+    }
+   ],
+   "source": [
+    "# 1. Bounded Tavily Web Search Tool\n",
+    "tavily_client = TavilyClient()\n",
+    "\n",
+    "@tool\n",
+    "def web_search(query: str) -> Any:\n",
+    "    \"\"\"Useful for searching the web for venues, hotels, and music playlists.\n",
+    "    Pass natural language keywords.\n",
+    "    \"\"\"\n",
+    "    try:\n",
+    "        return tavily_client.search(query=query, max_results=3)\n",
+    "    except Exception as e:\n",
+    "        return f\"Search error for '{query}': {str(e)}\"\n",
+    "\n",
+    "\n",
+    "# 2. Central State Schema\n",
+    "class WeddingState(AgentState):\n",
+    "    origin: str\n",
+    "    destination: str\n",
+    "    guest_count: str\n",
+    "    vibe: str\n",
+    "    music_genre: str\n",
+    "\n",
+    "\n",
+    "print(\"🔍 Tavily Search tool and WeddingState schema ready!\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "id": "f52f6535",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "👥 All 3 Subagents created!\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Base Model\n",
+    "model = init_chat_model(\n",
+    "    model=\"models/gemini-3.5-flash-lite\", model_provider=\"google_genai\"\n",
+    ")\n",
+    "\n",
+    "# 1. Travel Subagent\n",
+    "travel_subagent = create_agent(\n",
+    "    model=model,\n",
+    "    tools=travel_tools,\n",
+    "    system_prompt=(\n",
+    "        \"You are an expert flight booking specialist. Search for the best flight routes, \"\n",
+    "        \"prices, and schedules for the couple and guests. Return a concise shortlist with prices. \"\n",
+    "        \"Do not ask follow up questions.\"\n",
+    "    ),\n",
+    ")\n",
+    "\n",
+    "# 2. Venue Subagent\n",
+    "venue_subagent = create_agent(\n",
+    "    model=model,\n",
+    "    tools=[web_search],\n",
+    "    system_prompt=(\n",
+    "        \"You are an elite wedding venue scout. Use web search to find 2-3 stunning wedding venues \"\n",
+    "        \"matching the requested destination, guest count, and aesthetic. Do not make up venues.\"\n",
+    "    ),\n",
+    ")\n",
+    "\n",
+    "# 3. DJ Subagent\n",
+    "dj_subagent = create_agent(\n",
+    "    model=model,\n",
+    "    tools=[web_search],\n",
+    "    system_prompt=(\n",
+    "        \"You are a professional wedding DJ. Curate a 3-act playlist (Ceremony, Cocktail Hour, Dance Party) \"\n",
+    "        \"tailored to the requested genre and vibe with iconic track names.\"\n",
+    "    ),\n",
+    ")\n",
+    "\n",
+    "print(\"👥 All 3 Subagents created!\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "id": "5ce7c3dd",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "🛠️ State-reading delegation tools defined!\n"
+     ]
+    }
+   ],
+   "source": [
+    "@tool\n",
+    "async def search_flights(runtime: ToolRuntime[WeddingState]) -> str:\n",
+    "    \"\"\"Travel agent searches for flights based on state origin and destination.\"\"\"\n",
+    "    origin = runtime.state.get(\"origin\", \"London\")\n",
+    "    destination = runtime.state.get(\"destination\", \"Naples\")\n",
+    "    query = f\"Find the best direct or 1-stop flights from {origin} to {destination}\"\n",
+    "    res = await travel_subagent.ainvoke(\n",
+    "        {\"messages\": [HumanMessage(content=query)]}\n",
+    "    )\n",
+    "    ans = res[\"messages\"][-1].content\n",
+    "    return ans[0][\"text\"] if isinstance(ans, list) else str(ans)\n",
+    "\n",
+    "\n",
+    "@tool\n",
+    "async def search_venues(runtime: ToolRuntime[WeddingState]) -> str:\n",
+    "    \"\"\"Venue agent finds top venues based on state destination, guest count, and vibe.\"\"\"\n",
+    "    destination = runtime.state.get(\"destination\", \"Amalfi Coast\")\n",
+    "    guests = runtime.state.get(\"guest_count\", \"40\")\n",
+    "    vibe = runtime.state.get(\"vibe\", \"cliffside luxury\")\n",
+    "    query = f\"Find top wedding venues in {destination} for {guests} guests with a {vibe} style\"\n",
+    "    res = await venue_subagent.ainvoke(\n",
+    "        {\"messages\": [HumanMessage(content=query)]}\n",
+    "    )\n",
+    "    ans = res[\"messages\"][-1].content\n",
+    "    return ans[0][\"text\"] if isinstance(ans, list) else str(ans)\n",
+    "\n",
+    "\n",
+    "@tool\n",
+    "async def suggest_playlist(runtime: ToolRuntime[WeddingState]) -> str:\n",
+    "    \"\"\"DJ agent curates playlists based on state music genre and vibe.\"\"\"\n",
+    "    genre = runtime.state.get(\n",
+    "        \"music_genre\", \"acoustic pop and 80s dance Italian lounge\"\n",
+    "    )\n",
+    "    vibe = runtime.state.get(\"vibe\", \"cliffside luxury celebration\")\n",
+    "    query = f\"Curate a wedding ceremony and reception playlist for genre: {genre}, vibe: {vibe}\"\n",
+    "    res = await dj_subagent.ainvoke(\n",
+    "        {\"messages\": [HumanMessage(content=query)]}\n",
+    "    )\n",
+    "    ans = res[\"messages\"][-1].content\n",
+    "    return ans[0][\"text\"] if isinstance(ans, list) else str(ans)\n",
+    "\n",
+    "\n",
+    "@tool\n",
+    "def update_wedding_state(\n",
+    "    origin: str,\n",
+    "    destination: str,\n",
+    "    guest_count: str,\n",
+    "    vibe: str,\n",
+    "    music_genre: str,\n",
+    "    runtime: ToolRuntime,\n",
+    ") -> Command:\n",
+    "    \"\"\"Update the central wedding state when details are known.\n",
+    "    This tool must complete before calling search specialists.\n",
+    "    \"\"\"\n",
+    "    return Command(\n",
+    "        update={\n",
+    "            \"origin\": origin,\n",
+    "            \"destination\": destination,\n",
+    "            \"guest_count\": guest_count,\n",
+    "            \"vibe\": vibe,\n",
+    "            \"music_genre\": music_genre,\n",
+    "            \"messages\": [\n",
+    "                ToolMessage(\n",
+    "                    \"Successfully locked wedding details into central state.\",\n",
+    "                    tool_call_id=runtime.tool_call_id,\n",
+    "                )\n",
+    "            ],\n",
+    "        }\n",
+    "    )\n",
+    "\n",
+    "\n",
+    "print(\"🛠️ State-reading delegation tools defined!\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "id": "189e5661",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "👑 Enterprise Coordinator Agent ready!\n"
+     ]
+    }
+   ],
+   "source": [
+    "COORDINATOR_SYSTEM_PROMPT = \"\"\"You are the Lead Wedding Coordinator.\n",
+    "1. When given a request, first call `update_wedding_state` to lock in the origin, destination, guest count, vibe, and music genre.\n",
+    "2. Once the state is updated, delegate tasks to your specialists:\n",
+    "   - Call `search_flights`\n",
+    "   - Call `search_venues`\n",
+    "   - Call `suggest_playlist`\n",
+    "3. Synthesize their findings into a luxurious, beautifully structured Master Wedding Proposal.\n",
+    "\"\"\"\n",
+    "\n",
+    "wedding_memory = InMemorySaver()\n",
+    "\n",
+    "coordinator = create_agent(\n",
+    "    model=model,\n",
+    "    tools=[\n",
+    "        update_wedding_state,\n",
+    "        search_flights,\n",
+    "        search_venues,\n",
+    "        suggest_playlist,\n",
+    "    ],\n",
+    "    state_schema=WeddingState,\n",
+    "    system_prompt=COORDINATOR_SYSTEM_PROMPT,\n",
+    "    checkpointer=wedding_memory,\n",
+    ")\n",
+    "\n",
+    "print(\"👑 Enterprise Coordinator Agent ready!\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "d1bf5cad",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "wedding_request = HumanMessage(\n",
+    "    content=\"\"\"\n",
+    "We are planning a destination wedding!\n",
+    "- Flying from: London (LHR)\n",
+    "- Destination: Amalfi Coast, Italy (fly into Naples NAP)\n",
+    "- Guest count: 40 guests\n",
+    "- Vibe: Cliffside luxury with sunset outdoor dining\n",
+    "- Music genre: Acoustic pop for ceremony, 80s dance & Italian retro lounge for reception\n",
+    "\n",
+    "Please assemble our complete wedding proposal!\n",
+    "\"\"\"\n",
+    ")\n",
+    "\n",
+    "config = {\n",
+    "    \"configurable\": {\"thread_id\": \"amalfi_wedding_1\"},\n",
+    "    \"recursion_limit\": 40,\n",
+    "    \"tags\": [\"WeddingPlanner\", \"Module2Capstone\"],\n",
+    "}\n",
+    "\n",
+    "print(\"💍 Planning the Amalfi Wedding (calling subagents)...\")\n",
+    "response = await coordinator.ainvoke(\n",
+    "    {\"messages\": [wedding_request]}, config=config\n",
+    ")\n",
+    "\n",
+    "print(\"\\n\" + \"=\" * 60)\n",
+    "print(\"💐 MASTER WEDDING PROPOSAL\")\n",
+    "print(\"=\" * 60)\n",
+    "ans = response[\"messages\"][-1].content\n",
+    "print(ans[0][\"text\"] if isinstance(ans, list) else ans)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "03614db2",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "follow_up = HumanMessage(\n",
+    "    content=\"\"\"\n",
+    "This is gorgeous! Could we make one change:\n",
+    "What if we add a welcome boat cruise along the coast for our 40 guests the day before the wedding?\n",
+    "Can you recommend how to incorporate that into our itinerary and estimated budget?\n",
+    "\"\"\"\n",
+    ")\n",
+    "\n",
+    "print(\"🔄 Refining the proposal with memory...\")\n",
+    "response_2 = await coordinator.ainvoke(\n",
+    "    {\"messages\": [follow_up]}, config=config\n",
+    ")\n",
+    "\n",
+    "print(\"\\n\" + \"=\" * 60)\n",
+    "print(\"💐 UPDATED WEDDING PROPOSAL\")\n",
+    "print(\"=\" * 60)\n",
+    "ans_2 = response_2[\"messages\"][-1].content\n",
+    "print(ans_2[0][\"text\"] if isinstance(ans_2, list) else ans_2)"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "lc-foundations (3.13.1.final.0)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.13.1"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
+</file>
+
+<file path="contextandstateconverted.py">
+# Generated from: 2contextandstate.ipynb
+# Converted at: 2026-08-26T17:26:55.909Z
+# Next step (optional): refactor into modules & generate tests with RunCell
+# Quick start: pip install runcell
+
+# # Lesson 2.2: Context and State
+
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from dataclasses import dataclass
+
+@dataclass
+class ColourContext:
+    favourite_colour: str = "blue"
+    least_favourite_colour: str = "red"
+
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+
+gemini_lite = init_chat_model(
+        model="models/gemini-3.5-flash-lite",
+        model_provider="google_genai"
+    )
+
+agent = create_agent(
+    model=gemini_lite,
+    context_schema=ColourContext,
+)
+
+from langchain.messages import HumanMessage
+
+response = agent.invoke(
+    {"messages": [HumanMessage(content="What is my favourite colour?")]},
+    context=ColourContext()
+)
+
+ans = response["messages"][-1].content
+print(ans[0]['text'] if isinstance(ans, list) else ans)
+
+# # 2. Accessing context
+
+
+from langchain.tools import tool, ToolRuntime
+
+@tool
+def get_favourite_colour(runtime: ToolRuntime[ColourContext]) -> str:
+    """Get the favourite colour of the user"""
+    return runtime.context.favourite_colour
+
+@tool
+def get_least_favourite_colour(runtime: ToolRuntime[ColourContext]) -> str:
+    """Get the least favourite colour of the user"""
+    return runtime.context.least_favourite_colour
+
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+
+gemini_lite = init_chat_model(
+        model="models/gemini-3.5-flash-lite",
+        model_provider="google_genai",
+    )
+
+agent = create_agent(
+    model=gemini_lite,
+    context_schema=ColourContext,
+    tools=[get_favourite_colour, get_least_favourite_colour]
+)
+
+response = agent.invoke(
+    {"messages": [HumanMessage(content="What is my favourite colour?")]},
+    context=ColourContext()
+)
+
+ans = response["messages"][-1].content
+print(ans[0]['text'] if isinstance(ans, list) else ans)
+
+response = agent.invoke(
+    {"messages": [HumanMessage(content="What is my favourite colour?")]},
+    context=ColourContext(favourite_colour="green")
+)
+
+ans = response["messages"][-1].content
+print(ans[0]['text'] if isinstance(ans, list) else ans)
+
+# # 3. State
+
+
+from langchain.agents import AgentState
+
+class CustomState(AgentState):
+    favourite_colour: str
+
+from langchain.tools import tool, ToolRuntime
+from langgraph.types import Command
+from langchain.messages import ToolMessage
+
+@tool
+def update_favourite_colour(favourite_colour: str, runtime: ToolRuntime) -> Command:
+    """Update the favourite colour of the user in the state once they've revealed it."""
+    return Command(update={
+        "favourite_colour": favourite_colour, 
+        "messages": [ToolMessage("Successfully updated favourite colour", tool_call_id=runtime.tool_call_id)]}
+        )
+
+@tool
+def read_favourite_colour(runtime: ToolRuntime) -> str:
+    """Read the favourite colour of the user from the state."""
+    try:
+        return runtime.state["favourite_colour"]
+    except KeyError:
+        return "No favourite colour found in state"
+
+from langchain.agents import create_agent
+from langgraph.checkpoint.memory import InMemorySaver
+
+gemini_lite = init_chat_model(
+        model="models/gemini-3.5-flash-lite",
+        model_provider="google_genai",
+    )
+
+agent = create_agent(
+    gemini_lite,
+    tools=[update_favourite_colour],
+    checkpointer=InMemorySaver(),
+    state_schema=CustomState
+)
+
+response = agent.invoke(
+    { "messages": [HumanMessage(content="Hi! My favourite colour is green!")]},
+    {"configurable": {"thread_id": "1"}}
+)
+
+ans = response["messages"][-1].content
+print(ans[0]['text'] if isinstance(ans, list) else ans)
+
+response = agent.invoke(
+    { "messages": [HumanMessage(content="What's my favourite colour?")]},
+    {"configurable": {"thread_id": "1"}}
+)
+
+ans = response["messages"][-1].content
+print(ans[0]['text'] if isinstance(ans, list) else ans)
+
+# #
+</file>
+
+<file path="mcp_server.py">
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from mcp.server.fastmcp import FastMCP
+from tavily import TavilyClient
+from typing import Dict, Any
+from requests import get
+
+
+mcp = FastMCP("mcp_server")
+
+tavily_client = TavilyClient()
+
+
+# Tool for searching the web
+@mcp.tool()
+def search_web(query: str) -> Dict[str, Any]:
+    """Search the web for information"""
+
+    results = tavily_client.search(query)
+
+    return results
+
+
+# Resources - provide access to langchain-ai repo files
+@mcp.resource("github://langchain-ai/langchain-mcp-adapters/main/README.md")
+def github_file():
+    """
+    Resource for accessing langchain-ai/langchain-mcp-adapters/README.md file
+
+    """
+    url = f"https://raw.githubusercontent.com/langchain-ai/langchain-mcp-adapters/main/README.md"
+    try:
+        resp = get(url)
+        return resp.text
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+# Prompt template
+@mcp.prompt()
+def prompt():
+    """Analyze data from a langchain-ai repo file with comprehensive insights"""
+    return """
+    You are a helpful assistant that answers user questions about LangChain, LangGraph and LangSmith.
+
+    You can use the following tools/resources to answer user questions:
+    - search_web: Search the web for information
+    - github_file: Access the langchain-ai repo files
+
+    If the user asks a question that is not related to LangChain, LangGraph or LangSmith, you should say "I'm sorry, I can only answer questions about LangChain, LangGraph and LangSmith."
+
+    You may try multiple tool and resource calls to answer the user's question.
+
+    You may also ask clarifying questions to the user to better understand their question.
+    """
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")
+</file>
+
+<file path="multiagentsystemsconverted.py">
+# Generated from: 3multiagentsystems.ipynb
+# Converted at: 2026-08-26T17:27:40.132Z
+# Next step (optional): refactor into modules & generate tests with RunCell
+# Quick start: pip install runcell
+
+# # Lesson 2.3: Multi-Agent Systems
+
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from langchain.tools import tool
+
+@tool
+def square_root(x: float) -> float:
+    """Calculate the square root of a number"""
+    return x ** 0.5
+
+@tool
+def square(x: float) -> float:
+    """Calculate the square of a number"""
+    return x ** 2
+
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+
+gemini_lite = init_chat_model(
+        model="models/gemini-3.5-flash-lite",
+        model_provider="google_genai"
+    )
+
+subagent_1 = create_agent(
+    model=gemini_lite,
+    tools=[square_root]
+)
+
+subagent_2 = create_agent(
+    model=gemini_lite,
+    tools=[square]
+)
+
+from langchain.messages import HumanMessage
+
+@tool
+def call_subagent_1(x: float) -> float:
+    """Call subagent 1 in order to calculate the square root of a number"""
+    response = subagent_1.invoke({"messages": [HumanMessage(content=f"Calculate the square root of {x}")]})
+    return response["messages"][-1].content
+
+@tool
+def call_subagent_2(x: float) -> float:
+    """Call subagent 2 in order to calculate the square of a number"""
+    response = subagent_2.invoke({"messages": [HumanMessage(content=f"Calculate the square of {x}")]})
+    return response["messages"][-1].content
+
+## Creating the main agent
+
+main_agent = create_agent(
+    model=gemini_lite,
+    tools=[call_subagent_1, call_subagent_2],
+    system_prompt="You are a helpful assistant who can call subagents to calculate the square root or square of a number.")
+
+question = "What is the square root of 456?"
+
+response = main_agent.invoke({"messages": [HumanMessage(content=question)]})
+
+ans = response["messages"][-1].content
+print(ans[0]['text'] if isinstance(ans, list) else ans)
+
+question = "What is the the result of 21 squared?"
+
+response = main_agent.invoke({"messages": [HumanMessage(content=question)]})
+
+ans = response["messages"][-1].content
+print(ans[0]['text'] if isinstance(ans, list) else ans)
+</file>
+
+</files>
