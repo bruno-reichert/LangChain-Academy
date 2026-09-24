@@ -180,3 +180,4 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 /1 - Introduction To Langchain/lca-lc-foundations
+3 - Building Reliable Agents/lca-reliable-agents/python/.env.example
