@@ -17,14 +17,7 @@ from langsmith.wrappers import wrap_openai
 load_dotenv()
 
 # ---------------------------------------------------------------------------
-# Client Configuration: Groq 20B (High TPM Diet) with LangSmith Tracing
-# ---------------------------------------------------------------------------
-# Switch to Gemini's 1,000,000 TPM endpoint
-# ---------------------------------------------------------------------------
-# Client Configuration: Groq 20B (Standard OpenAI Tool Calling - No thought signatures!)
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# Client Configuration: Gemini 1.5 Flash (1M TPM, Fresh Daily Quota, No Thought Signatures!)
+# Client Configuration: Groq Qwen (Fresh TPM Quota) with LangSmith Tracing
 # ---------------------------------------------------------------------------
 client = wrap_openai(
     AsyncOpenAI(
@@ -40,12 +33,13 @@ thread_id = str(uuid7())
 # Conversation history store
 thread_store: dict[str, list] = {}
 
-# Knowledge base storage (loaded on startup)
-knowledge_base_docs: List[Tuple[str, str]] = []  # List of (filename, content) tuples
+# Knowledge base storage
+knowledge_base_docs: List[Tuple[str, str]] = []
 knowledge_base_vectors = None
 vocab_index: dict = {}
 idf_weights = None
 
+# v4 System Prompt (Notice: No "CONCISENESS PRIORITY" section!)
 system_prompt = """You are Emma, a customer support specialist for OfficeFlow Supply Co., a paper and office supplies distribution company serving small-to-medium businesses across North America.
 
 ABOUT YOUR ROLE:
@@ -72,9 +66,6 @@ YOUR COMMUNICATION STYLE:
 - If you don't know something, be honest and direct them to the right resource
 - Use the customer's name if they provide it
 - Keep responses concise but thorough
-
-CONCISENESS PRIORITY:
-Your responses should be brief and to the point. Avoid unnecessary filler, repetition, or overly elaborate explanations. Get straight to the answer. If you can say something in one sentence, don't use three. Customers appreciate quick, direct answers over lengthy responses.
 
 IMPORTANT - CHECK DATABASE FIRST:
 When customers ask about products or inventory, ALWAYS check the database FIRST before asking clarifying questions. Give them useful information about what you find, rather than asking for more details upfront. For example, if a customer asks "do you have any paper?" - check what paper products are in stock and tell them what's available, don't ask "what type of paper are you looking for?"
@@ -115,8 +106,6 @@ You have access to two powerful tools to help customers:
    - Company background and general info
    - Business hours and holiday closures
 
-Choose the right tool based on what the customer is asking about. For questions about specific products, use the database. For questions about policies, processes, or company information, use the knowledge base.
-
 Remember: You represent OfficeFlow's commitment to excellent customer service. Be helpful, honest, and human in every interaction."""
 
 
@@ -134,7 +123,6 @@ def query_database(query: str, db_path: str) -> str:
         return f"Error: {str(e)}"
 
 
-# Function calling schema for Database with Schema Discovery
 QUERY_DATABASE_TOOL = {
     "type": "function",
     "function": {
@@ -164,32 +152,26 @@ SEARCH BEST PRACTICES (apply after schema discovery):
 
 
 # ---------------------------------------------------------------------------
-# Local Vector Engine & MTIME Staleness Check (Whole Documents)
+# Local Vector Engine & MTIME Staleness Check (Whole Documents + Token Diet)
 # ---------------------------------------------------------------------------
 
 def tokenize(text: str) -> List[str]:
-    """Simple regex tokenizer."""
     return re.findall(r"\w+", text.lower())
 
 
 def _embeddings_are_stale(kb_path: Path, cache_path: Path) -> bool:
-    """Check if any document has been modified after the local cache was generated."""
     if not cache_path.exists():
         return True
-
     cache_mtime = cache_path.stat().st_mtime
     for file_path in kb_path.glob("*.md"):
         if file_path.name == "CHUNKING_NOTES.md":
             continue
         if file_path.stat().st_mtime > cache_mtime:
-            print(f"  Stale: {file_path.name} was modified after cache was generated")
             return True
-
     return False
 
 
 async def load_knowledge_base(kb_dir: str = None) -> None:
-    """Load knowledge base documents and embeddings for WHOLE documents with mtime staleness check."""
     global knowledge_base_docs, knowledge_base_vectors, vocab_index, idf_weights
 
     base_dir = Path(__file__).parent / "knowledge_base" if kb_dir is None else Path(kb_dir)
@@ -202,7 +184,6 @@ async def load_knowledge_base(kb_dir: str = None) -> None:
         print(f"Warning: Knowledge base directory '{kb_path}' not found")
         return
 
-    # Check if cache is fresh
     if not _embeddings_are_stale(kb_path, cache_path):
         with open(cache_path, "r", encoding="utf-8") as f:
             cache_data = json.load(f)
@@ -210,26 +191,16 @@ async def load_knowledge_base(kb_dir: str = None) -> None:
         knowledge_base_vectors = np.array(cache_data["vectors"])
         vocab_index = cache_data["vocab_index"]
         idf_weights = np.array(cache_data["idf_weights"])
-        print(f"Knowledge base loaded from fresh cache: {len(knowledge_base_docs)} documents")
         return
 
-    # Otherwise: read WHOLE documents
-    print("Knowledge base documents changed or cache missing. Re-indexing whole documents...")
     docs = []
     for file_path in kb_path.glob("*.md"):
         if file_path.name == "CHUNKING_NOTES.md":
             continue
         with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
-            docs.append((file_path.name, content))
-
-    if not docs:
-        print(f"Warning: No documents found in '{kb_path}'")
-        return
+            docs.append((file_path.name, f.read()))
 
     knowledge_base_docs = docs
-
-    # Vectorize whole documents with TF-IDF
     tokenized_docs = [tokenize(content) for _, content in docs]
     vocab = sorted(list(set(word for doc in tokenized_docs for word in doc)))
     vocab_index = {word: i for i, word in enumerate(vocab)}
@@ -260,12 +231,9 @@ async def load_knowledge_base(kb_dir: str = None) -> None:
             "idf_weights": idf_weights.tolist(),
         }, f)
 
-    print(f"Knowledge base indexed: {len(docs)} whole documents in {len(vocab)} dimensions!")
-
 
 @traceable(name="search_knowledge_base", run_type="tool")
 async def search_knowledge_base(query: str, top_k: int = 2) -> str:
-    """Search knowledge base using local vector similarity. Returns WHOLE documents, not chunks."""
     global knowledge_base_docs, knowledge_base_vectors
     if not knowledge_base_docs or knowledge_base_vectors is None:
         await load_knowledge_base()
@@ -288,7 +256,7 @@ async def search_knowledge_base(query: str, top_k: int = 2) -> str:
     for idx in top_indices:
         score = similarities[idx]
         filename, content = knowledge_base_docs[idx]
-        # TOKEN DIET: Slice to first 500 characters so we never exceed Groq's 8,000 TPM limit!
+        # Token diet: slice to 600 chars to avoid TPM explosion
         snippet = content[:600] + "..." if len(content) > 600 else content
         results.append(f"=== {filename} (relevance: {score:.3f}) ===\n{snippet}\n")
 
@@ -322,10 +290,6 @@ def save_thread_history(thread_id: str, messages: list):
     thread_store[thread_id] = messages
 
 
-# ---------------------------------------------------------------------------
-# Rate-Limit Protected Completion Helper
-# ---------------------------------------------------------------------------
-
 async def safe_chat_completion(**kwargs):
     """Catches Groq 429 TPM limits and sleeps automatically."""
     for attempt in range(5):
@@ -337,11 +301,8 @@ async def safe_chat_completion(**kwargs):
     raise RuntimeError("Failed after 5 rate limit retries.")
 
 
-# ---------------------------------------------------------------------------
-# Main Chat Pipeline
-# ---------------------------------------------------------------------------
-
-@traceable(name="Emma", metadata={"thread_id": thread_id})
+# Tagged as Emma-v4 in LangSmith
+@traceable(name="Emma-v4", metadata={"thread_id": thread_id})
 async def chat(question: str) -> dict:
     """Process a user question and return assistant response."""
     global knowledge_base_docs
@@ -359,7 +320,6 @@ async def chat(question: str) -> dict:
         + [{"role": "user", "content": question}]
     )
 
-    # First API call with rate-limit protection
     response = await safe_chat_completion(
         model=CHAT_MODEL,
         messages=messages,
@@ -408,7 +368,6 @@ async def chat(question: str) -> dict:
                 "content": result,
             })
 
-        # Next API call with rate-limit protection
         response = await safe_chat_completion(
             model=CHAT_MODEL,
             messages=messages,
@@ -425,30 +384,3 @@ async def chat(question: str) -> dict:
 
     save_thread_history(thread_id, messages[1:])
     return {"messages": messages, "output": final_content}
-
-
-async def main():
-    print("Office Supplies Support Chat (Emma v5)")
-    print("=" * 50)
-    print(f"Thread ID: {thread_id}\n")
-
-    await load_knowledge_base()
-    print("\nType 'quit' or 'exit' to end the conversation\n")
-
-    while True:
-        user_input = input("You: ").strip()
-
-        if user_input.lower() in ["quit", "exit", "q"]:
-            print("Thank you for chatting! Goodbye!")
-            break
-
-        if not user_input:
-            continue
-
-        result = await chat(user_input)
-        response = result["output"]
-        print(f"\nEmma: {response}\n")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
