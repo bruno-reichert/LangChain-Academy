@@ -1,0 +1,39 @@
+[project]
+name = "intro-to-langsmith"
+version = "0.0.0"
+description = "Educational materials for learning LangSmith (Crusty Nails Edition)"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    # Core Framework & Graph
+    "langchain",
+    "langgraph",
+    "langgraph-sdk",
+    "langgraph-checkpoint-sqlite",
+    "langchain-community",
+    "langchain-core",
+    "langchain-text-splitters",
+
+    # LangSmith & Observability
+    "langsmith>=0.8.18",
+
+    # Zero-Dollar LLM Provider Integrations
+    "langchain-openai",         # Kept for Groq OpenAI-compatible endpoints & raw client wrapping
+    "openai",                   # For wrap_openai() telemetry
+    "langchain-google-genai",   # Google Gemini 2.0 / 1.5 Flash ($0 Free Tier)
+    "langchain-groq",           # Groq ($0 Fast Inference / Judges)
+    "groq",                     # Raw Groq client access
+    "tavily-python",            # 1,000 free searches/mo
+
+    # Evaluation & Data Utilities
+    "scikit-learn",             # Local embeddings / TF-IDF fallbacks
+    "pandas",
+    "pyarrow",
+    "lxml",
+    "uuid-utils",               # Fast native uuid7 generation for test runs
+
+    # Environment & Notebook Runtime
+    "python-dotenv>=1.2.2",
+    "notebook",
+    "ipywidgets>=8.1.8",
+]
