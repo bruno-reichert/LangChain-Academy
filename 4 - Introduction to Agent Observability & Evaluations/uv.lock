@@ -734,6 +734,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "scikit-learn" },
     { name = "tavily-python" },
+    { name = "utils" },
     { name = "uuid-utils" },
 ]
 
@@ -761,6 +762,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "scikit-learn" },
     { name = "tavily-python" },
+    { name = "utils", specifier = ">=1.0.2" },
     { name = "uuid-utils" },
 ]
 
@@ -2674,6 +2676,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/e3/05/b17359e1cefb4f909
 wheels = [
     { url = "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl", hash = "sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3", size = 135717, upload-time = "2026-09-15T19:29:34.577Z" },
 ]
+
+[[package]]
+name = "utils"
+version = "1.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ad/1f/c196d21c2df061923154aecf24cab049a114394956e90c9bfbfdd398e27a/utils-1.0.2.tar.gz", hash = "sha256:f4d5157e27e9d434006b5b52a1ec951a34e53e7ecaa145d43a153ec452eb5d9e", size = 13203, upload-time = "2024-01-06T07:11:25.75Z" }
 
 [[package]]
 name = "uuid-utils"
