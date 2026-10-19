@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="2400" viewBox="0 0 3840 2400" font-family="'TWK Lausanne', 'Inter', sans-serif">
+  <defs>
+    <marker id="grayArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#40668D"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="3840" height="2400" fill="#030710"/>
+
+  <g transform="translate(87.85,126.42) scale(6.4286)">
+    <!-- Left outer container: You provide -->
+    <rect x="8" y="8" width="204" height="194" rx="6" fill="#0D1322" stroke="#40668D" stroke-width="1.5"/>
+    <text x="20" y="40" font-size="15" font-weight="700" fill="#F2FAFF">You provide</text>
+
+    <!-- Business logic box -->
+    <rect x="20" y="58" width="180" height="128" rx="4" fill="#132318" stroke="#E3FF8F" stroke-width="1.5"/>
+    <text x="32" y="89" font-size="14" font-weight="700" fill="#E3FF8F">Business logic</text>
+    <text x="32" y="109" font-size="13" font-weight="500" fill="#F6FFDB">- Instructions</text>
+    <text x="32" y="127" font-size="13" font-weight="500" fill="#F6FFDB">- Tools</text>
+    <text x="32" y="145" font-size="13" font-weight="500" fill="#F6FFDB">- Skills</text>
+    <text x="32" y="163" font-size="13" font-weight="500" fill="#F6FFDB">- Model</text>
+
+    <!-- Right outer container: Managed Deep Agents -->
+    <rect x="244" y="8" width="275" height="318" rx="6" fill="#0D1322" stroke="#40668D" stroke-width="1.5"/>
+    <text x="256" y="40" font-size="15" font-weight="700" fill="#F2FAFF">Managed Deep Agents</text>
+
+    <!-- Deep Agents harness box -->
+    <rect x="271" y="58" width="230" height="110" rx="4" fill="#101E33" stroke="#7FC8FF" stroke-width="1.5"/>
+    <text x="283" y="89" font-size="14" font-weight="700" fill="#7FC8FF">Deep Agents harness</text>
+    <text x="283" y="109" font-size="13" font-weight="500" fill="#BFE1FF">- Agent loop</text>
+    <text x="283" y="127" font-size="13" font-weight="500" fill="#BFE1FF">- Filesystem</text>
+    <text x="283" y="145" font-size="13" font-weight="500" fill="#BFE1FF">- Subagents</text>
+
+    <!-- Managed runtime box -->
+    <rect x="271" y="200" width="230" height="110" rx="4" fill="#1B1430" stroke="#D5C3F7" stroke-width="1.5"/>
+    <text x="283" y="231" font-size="14" font-weight="700" fill="#D5C3F7">Managed runtime</text>
+    <text x="283" y="251" font-size="13" font-weight="500" fill="#FDF3FF">- Agent Server</text>
+    <text x="283" y="269" font-size="13" font-weight="500" fill="#FDF3FF">- Sandboxes</text>
+    <text x="283" y="287" font-size="13" font-weight="500" fill="#FDF3FF">- Schedules</text>
+
+    <!-- Arrows -->
+    <path d="M202,113 L267,113" fill="none" stroke="#40668D" stroke-width="2.5" marker-end="url(#grayArrow)"/>
+    <path d="M386,170 L386,198" fill="none" stroke="#40668D" stroke-width="2.5" marker-end="url(#grayArrow)"/>
+  </g>
+</svg>
