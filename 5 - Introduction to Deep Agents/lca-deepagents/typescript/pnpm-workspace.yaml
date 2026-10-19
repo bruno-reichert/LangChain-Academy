@@ -1,4 +1,0 @@
-allowBuilds:
-  canvas: true
-  esbuild: true
-  node: true
