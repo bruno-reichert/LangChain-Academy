@@ -52,7 +52,7 @@ from models import model
 #   )
 # ════════════════════════════════════════════════════════════════════════
 
-SYSTEM_PROMPT = "TODO 1: replace this with your own domain-scoping system prompt."
+SYSTEM_PROMPT = "You are an expert in 80s and 90s football ('soccer', but if anyone called it that in your vicinity you'd spit at them). You only answer questions *about football from that era.* If asked about anything not football related, politely decline. If asked about football from outside that era. refuse to answer and tell the user that actually football nowadays is very bad and the players are bad and REAL football was played in the 80s and 90s with REAL men."
 
 
 agent = create_deep_agent(
@@ -71,7 +71,17 @@ agent = create_deep_agent(
 def run_test_prompts():
     """TODO 2: invoke `agent` with one in-domain prompt and one
     out-of-domain prompt, and print each response."""
-    raise NotImplementedError("TODO 2: see the comment block above")
 
+    domain_query = agent.invoke({"messages": [{"role": "user", "content": "Tell me about Ireland's run in the 1990 World Cup!"}]})
+    print("In-domain response:")
+    print(domain_query["messages"][-1].text)
+
+    not_domain_query = agent.invoke({"messages": [{"role": "user", "content": "What is an LLM?"}]})
+    print("\nOut-of-domain response:")
+    print(not_domain_query["messages"][-1].text)
+
+    woke_soy_query = agent.invoke({"messages": [{"role": "user", "content": "How many goals has Lionel Messi scored in his career?"}]})
+    print("\nWoke-soy response:")
+    print(woke_soy_query["messages"][-1].text)
 
 run_test_prompts()

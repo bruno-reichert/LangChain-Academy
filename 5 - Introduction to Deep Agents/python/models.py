@@ -36,7 +36,7 @@ from langchain.chat_models import init_chat_model
 
 # ═══ Zero-Dollar Stack Active Configuration ═══════════════════════════════════
 # Primary Engine: Google Gemini 3.5 Flash (Default - 1M TPM free, multimodal)
-model = init_chat_model("google_genai:gemini-3.5-flash", timeout=60, max_retries=2)
+# model = init_chat_model("google_genai:gemini-3.5-flash", timeout=60, max_retries=2)
 strong_model = init_chat_model("google_genai:gemini-3.5-flash", timeout=120, max_retries=2)
 
 # --- GROQ PRESETS (Uncomment as needed) ---
@@ -58,11 +58,11 @@ strong_model = init_chat_model("google_genai:gemini-3.5-flash", timeout=120, max
 from langchain_openai import ChatOpenAI
 
 # Default free endpoint suggested by the course:
-# model = ChatOpenAI(
-#     model="nvidia/nemotron-3-ultra-550b-a55b:free",
-#     base_url="https://openrouter.ai/api/v1",
-#     api_key=os.environ.get("OPENROUTER_API_KEY"),
-#     temperature=0.1,
-# )
+model = ChatOpenAI(
+    model="nvidia/nemotron-3-ultra-550b-a55b:free",
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ.get("OPENROUTER_API_KEY"),
+    temperature=0.1,
+)
 
 # Or any active free open-source model on OpenRouter, for example:
