@@ -48,9 +48,8 @@ agent = create_deep_agent(
 #     thread_a = {"configurable": {"thread_id": "my-thread-a"}}
 # ════════════════════════════════════════════════════════════════════════
 
-thread_a = None  # TODO 1: replace with your own thread config
-thread_b = None  # TODO 1: replace with your own thread config
-
+thread_a = {"configurable": {"thread_id": "user-jdm-project-101"}}
+thread_b = {"configurable": {"thread_id": "user-jdm-project-102"}}
 
 # ════════════════════════════════════════════════════════════════════════
 # TODO 2: Run the turns that demonstrate persistence, isolation, and
@@ -77,8 +76,46 @@ thread_b = None  # TODO 1: replace with your own thread config
 # ════════════════════════════════════════════════════════════════════════
 
 def run_scenario():
-    """TODO 2: run the multi-turn, multi-thread scenario described above."""
-    raise NotImplementedError("TODO 2: see the comment block above")
+    # ── Proof 1: Persistence within the same thread ──────────────────
+    print("=== 1. Testing Persistence (Thread A) ===")
+    turn_1 = agent.invoke(
+        {"messages": [{"role": "user", "content": "I am planning to build an NA Mazda Miata with an ITB setup."}]},
+        config=thread_a,
+    )
+    print("Thread A, Turn 1:")
+    print(turn_1["messages"][-1].text)
+
+    turn_2 = agent.invoke(
+        {"messages": [{"role": "user", "content": "What engine setup and car did I say I was planning to build?"}]},
+        config=thread_a,
+    )
+    print("\nThread A, Turn 2 (Recall):")
+    print(turn_2["messages"][-1].text)
+
+    # ── Proof 2: Isolation across different thread_ids ───────────────
+    print("\n=== 2. Testing Isolation (Thread B) ===")
+    turn_b = agent.invoke(
+        {"messages": [{"role": "user", "content": "What engine setup and car did I say I was planning to build?"}]},
+        config=thread_b,
+    )
+    print("Thread B, Turn 1 (Fresh thread on same agent):")
+    print(turn_b["messages"][-1].text)
+
+    # ── Proof 3: Checkpointer Scoping (Fresh MemorySaver) ────────────
+    print("\n=== 3. Testing Checkpointer Instance Scope ===")
+    fresh_agent = create_deep_agent(
+        model=model,
+        checkpointer=MemorySaver(),  # Brand new in-memory storage instance
+    )
+    fresh_result = fresh_agent.invoke(
+        {"messages": [{"role": "user", "content": "What engine setup and car did I say I was planning to build?"}]},
+        config=thread_a,  # Same thread_id string, but separate checkpointer!
+    )
+    print("Fresh Agent on Thread A's ID:")
+    print(fresh_result["messages"][-1].text)
+    print("\nExplanation: Even though the thread_id string matches ('user-jdm-project-101'), "
+          "memory is scoped to the specific MemorySaver Python object in RAM. "
+          "A new checkpointer instance starts with completely empty tables.")
 
 
 run_scenario()

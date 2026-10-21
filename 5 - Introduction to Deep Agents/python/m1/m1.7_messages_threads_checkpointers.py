@@ -31,3 +31,11 @@ result = agent.invoke(
 )
 print("\nThread B, turn 1:")
 print(result["messages"][-1].text)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "It's blue! My bad!"}]},
+    config=thread_b,
+)
+print("\nThread B, turn 2:")
+print(result["messages"][-1].text)
+

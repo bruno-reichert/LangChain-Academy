@@ -61,16 +61,26 @@ from models import model
 async def build_tools():
     """TODO 1: build a MultiServerMCPClient, fetch its tools, filter them,
     and return the filtered list."""
-    raise NotImplementedError("TODO 1: see the comment block above")
+    client = MultiServerMCPClient({
+        "deepwiki": {
+            "transport": "http",
+            "url": "https://mcp.deepwiki.com/mcp",
+        }
+    })
+    tools = await client.get_tools()
+
+    ALLOWED = {"ask_wiki_question"}
+    return [t for t in tools if t.name in ALLOWED]
 
 
 # ════════════════════════════════════════════════════════════════════════
-# TODO 2: Write a question suited to your chosen server's own domain,
-# not Lab 1's "what is MCP..." question.
+# TODO 2: Write a question suited to your chosen server's own domain.
 # ════════════════════════════════════════════════════════════════════════
 
-QUESTION = "TODO 2: replace with a question that puts your chosen tool(s) to work."
-
+QUESTION = (
+    "Using DeepWiki, what is the core architecture and main purpose of "
+    "the 'langchain-ai/langgraph' GitHub repository?"
+)
 
 async def main():
     tools = await build_tools()
