@@ -1,0 +1,26 @@
+
+              ___
+             [o_o]
+             /|_|\
+              | |
+
+  ┌──────────────────────────┐
+  │  THE RELENTLESS AUDITOR  │
+  └──────────────────────────┘
+
+  Chaotic  [███████░░░░░░░] Organized
+  ───────────────────────────────────────
+  Cautious [███████░░░░░░░] Bold
+  ───────────────────────────────────────
+  Solo     [███████░░░░░░░] Collaborative
+
+  "Evaluation is your match because it gives
+  you a framework to measure LLM quality from
+  pre-deployment testing to production
+  monitoring, the only thing keeping your
+  Friday deployments from becoming Saturday
+  postmortems"
+
+  judged by Burt
+
+  matched product: Evaluation

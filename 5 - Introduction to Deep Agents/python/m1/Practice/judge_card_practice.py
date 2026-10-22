@@ -101,9 +101,7 @@ can barely be bothered to look up from whatever they were doing to
 deliver it. You are sharp, a little cruel, and allergic to participation
 trophies.""" + TOOL_SEQUENCE,
 
-    "your_persona": """TODO 1: replace this text with your own judge persona.
-Start with "You are <Name>, ..." and describe a voice that is completely
-different from the three judges above.""" + TOOL_SEQUENCE,
+    "unix_guy_burt": """You are Burt, a battle-hardened 1990s Unix sysadmin who has maintained mainframe clusters on caffeine and pure spite since 1994. You speak in gruff, world-weary IT jargon (grepping, man pages, segfaults, kill -9). You view every developer's habits through the lens of 'how badly is this person going to crash production on a Friday afternoon?'. Treat weak or disorganized habits like an unpatched zero-day vulnerability. Never use modern buzzwords without scoffing. You sign your verdicts as Burt.""" + TOOL_SEQUENCE,
 }
 
 
@@ -120,33 +118,24 @@ def score_and_match(answers: list[tuple[int, int, int]]) -> dict:
     """Tally the quiz answers into three 0-100 trait scores and pick a
     matching LangChain product. Call this first, with the exact answers
     list you were given."""
-    # Each of the 3 trait scores (chaotic/organized, cautious/bold,
-    # solo/collaborative) starts neutral, at 50.
     scores = [50, 50, 50]
-    # answers is a list of (delta_1, delta_2, delta_3) tuples, one per
-    # question. Add each delta onto its matching score.
     for delta_tuple in answers:
         for i in range(3):
             scores[i] += delta_tuple[i]
-    # A long run of the same answer could push a score past 0 or 100, so
-    # clamp every score back into that range.
     scores = [max(0, min(100, score)) for score in scores]
 
-    # TODO here: scores is finished. Use it to pick a matched product.
-    # 1. Set axis_index to the index (0, 1, or 2) of whichever score in
-    #    scores is furthest from 50, i.e. has the biggest abs(score - 50).
-    #    Hint: this is a "find the index of the biggest value" problem.
-    #    Python's max() takes a key= function if you want to search by
-    #    something other than the value itself, e.g.
-    #    max(range(len(scores)), key=lambda i: ...)
-    # 2. TRAIT_AXES[axis_index] is a (left_label, right_label) pair, e.g.
-    #    ("Chaotic", "Organized"). Set direction to whichever label
-    #    matches the side scores[axis_index] leans toward: the right
-    #    label if scores[axis_index] >= 50, otherwise the left label.
-    # 3. Set product to PRODUCT_MATCHES[direction.lower()], e.g.
-    #    PRODUCT_MATCHES["chaotic"] -> "Fleet".
-    # 4. Return {"trait_scores": scores, "product": product}.
-    raise NotImplementedError("TODO 2: see the comments above")
+    # 1. Find axis furthest from 50 (biggest absolute deviation)
+    axis_index = max(range(len(scores)), key=lambda i: abs(scores[i] - 50))
+    
+    # 2. Leans right if >= 50, else leans left
+    left_label, right_label = TRAIT_AXES[axis_index]
+    direction = right_label if scores[axis_index] >= 50 else left_label
+    
+    # 3. Lookup product from dictionary
+    product = PRODUCT_MATCHES[direction.lower()]
+    
+    # 4. Return trait scores and matched product
+    return {"trait_scores": scores, "product": product}
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -157,8 +146,7 @@ def score_and_match(answers: list[tuple[int, int, int]]) -> dict:
 # judging the same quiz answers.
 # ════════════════════════════════════════════════════════════════════════
 
-JUDGES_TO_RUN = ["your_persona"]  # TODO 3: e.g. ["your_persona", "ancient_mummy"]
-
+JUDGES_TO_RUN = ["unix_guy_burt", "savage_critic"]
 
 # ════════════════════════════════════════════════════════════════════════
 # TODO 4 (Lesson 1.8, Human-in-the-Loop: Decision Types)
@@ -167,8 +155,7 @@ JUDGES_TO_RUN = ["your_persona"]  # TODO 3: e.g. ["your_persona", "ancient_mummy
 # can approve, edit, or reject it.
 # ════════════════════════════════════════════════════════════════════════
 
-INTERRUPT_ON = None  # TODO 4: e.g. {"post_card": True}
-
+INTERRUPT_ON = {"post_card": True}
 
 # ════════════════════════════════════════════════════════════════════════
 # TODO 5 (Lesson 1.3, Models, optional)
@@ -204,16 +191,38 @@ MODEL = model  # TODO 5 (optional): e.g. MODEL = strong_model
 # know it failed: the agent gets the same placeholder text in both cases.
 # ════════════════════════════════════════════════════════════════════════
 
-PLACEHOLDER_FACT = "No docs fact available. Base the verdict on the trait scores instead."
+import asyncio
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from deepagents import create_deep_agent
 
+async def _fetch_mcp_fact(product: str) -> str:
+    client = MultiServerMCPClient({
+        "docs-langchain": {
+            "transport": "http",
+            "url": "https://docs.langchain.com/mcp",
+        }
+    })
+    tools = await client.get_tools()
+    allowed_tools = [t for t in tools if t.name == "search_docs_by_lang_chain"]
+    mcp_agent = create_deep_agent(model=MODEL, tools=allowed_tools)
+    result = await mcp_agent.ainvoke({
+        "messages": [{
+            "role": "user", 
+            "content": f"Using search_docs_by_lang_chain, describe the LangChain product '{product}' in ONE short factual sentence (under 25 words)."
+        }]
+    })
+    return result["messages"][-1].text.strip()
 
 @tool
 def fetch_product_fact(product: str) -> str:
     """Look up one grounded, factual sentence about the LangChain product
     you were matched with. Call this right after score_and_match, passing
     in the product name it returned."""
-    # TODO 6: replace this line with the MCP lookup described above.
-    return PLACEHOLDER_FACT
+    try:
+        return asyncio.run(_fetch_mcp_fact(product))
+    except Exception as e:
+        print(f"MCP lookup failed: {e}")
+        return PLACEHOLDER_FACT
 
 
 def build_user_prompt(answers: list[tuple[int, int, int]]) -> str:
