@@ -1,15 +1,15 @@
-from uuid import uuid4
-
+from pathlib import Path
 from deepagents import create_deep_agent
-from deepagents.backends.langsmith import LangSmithSandbox
-from langsmith.sandbox import SandboxClient
+from deepagents.backends import LocalShellBackend  # <-- Free local shell!
 
 from models import model
 
-client = SandboxClient()
-ls_sandbox = client.create_sandbox(name=f"lca-deepagents-lab-{uuid4().hex[:8]}")
-print(f"Sandbox: {ls_sandbox.name}  (id: {ls_sandbox.id})")
-backend = LangSmithSandbox(sandbox=ls_sandbox)
+# Create a safe, isolated local sandbox directory inside m2/
+sandbox_dir = Path(__file__).parent / "local_sandbox"
+sandbox_dir.mkdir(exist_ok=True)
+
+# Mount the local shell backend to that directory
+backend = LocalShellBackend(root_dir=str(sandbox_dir), virtual_mode=True)
 
 agent = create_deep_agent(
     model=model,
@@ -20,20 +20,17 @@ agent = create_deep_agent(
     ),
 )
 
-try:
-    result = agent.invoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        "Write a Python script that prints the first 15 Fibonacci numbers, "
-                        "save it to fib.py, and run it."
-                    ),
-                }
-            ]
-        }
-    )
-    print(result["messages"][-1].text)
-finally:
-    client.delete_sandbox(ls_sandbox.name)
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "Write a Python script that prints the first 15 Fibonacci numbers, "
+                    "save it to fib.py, and run it."
+                ),
+            }
+        ]
+    }
+)
+print(result["messages"][-1].text)
