@@ -68,6 +68,9 @@ print("=== With interpreter ===")
 print(result_with["messages"][-1].text)
 
 # --- Agent without interpreter ---
+import time
+print("\nResting 10s for Groq quota before running agent without interpreter...")
+time.sleep(10)
 
 agent_without = create_deep_agent(
     model=model,

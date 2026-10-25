@@ -62,8 +62,17 @@ from models import model
 # ════════════════════════════════════════════════════════════════════════
 
 def build_turns() -> list[str]:
-    """TODO 1: return your own list of user turns (at least 8)."""
-    raise NotImplementedError("TODO 1: see the comment block above")
+    return [
+        "I am starting an engine build for my 1993 Nissan Skyline GT-R with a power target of exactly 650 horsepower.",
+        "I am deciding between twin Garrett G25 turbos or a single large turbo setup.",
+        "What fuel injector size should I run if I want to use E85 for this setup?",
+        "Should I keep the stock cast-iron RB26 block or upgrade to an RB30 bottom end for more displacement?",
+        "What clutch kit would you recommend for holding that much torque on the street without slipping?",
+        "I also need to upgrade the oil pump with a billet crank collar so the engine doesn't starve at high RPM.",
+        "What suspension coilovers work best on the track for an R32 chassis?",
+        "Do I need to install a lockout kit to delete the HICAS four-wheel steering system?",
+        "Quick check before we start ordering parts: what was the exact target horsepower for my Skyline build that I mentioned at the start?",
+    ]
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -80,9 +89,9 @@ def build_turns() -> list[str]:
 # gets compacted away before the next one lands, and the final recall fails.
 # ════════════════════════════════════════════════════════════════════════
 
-MAX_INPUT_TOKENS = None  # TODO 2: replace None with your chosen integer threshold
+MAX_INPUT_TOKENS = 1200
 
-model.profile = {**model.profile, "max_input_tokens": MAX_INPUT_TOKENS}
+model.profile = {**(model.profile or {}), "max_input_tokens": MAX_INPUT_TOKENS}
 
 agent = create_deep_agent(
     model=model,

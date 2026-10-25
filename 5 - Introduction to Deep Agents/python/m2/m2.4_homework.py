@@ -69,33 +69,72 @@ def query_chinook(sql: str) -> str:
 
 # ════════════════════════════════════════════════════════════════════════
 # TODO 1: Write your own question about the Chinook database.
-#
-# Pick anything the query_chinook tool can answer: top customers by
-# country, which artist has the most albums, average invoice total by
-# year, whatever you're curious about. A question with a couple of
-# dependent steps (like Lab 2's) is a good excuse to use PTC, but a
-# single-query question is a perfectly fine answer too.
 # ════════════════════════════════════════════════════════════════════════
 
-TASK = None  # TODO 1: replace with your own question
+TASK = (
+    "Which country generated the highest total sales revenue, "
+    "and who is the top-spending customer from that specific country? "
+    "State the country, the customer's full name, and how much they spent."
+)
 
 
 # ════════════════════════════════════════════════════════════════════════
 # TODO 2: Write a simple eval check for the agent's answer.
-#
-# eval_answer(answer_text) runs after the agent responds. Independently
-# work out what you believe the right answer is (run your own SQL query,
-# do the math by hand, whatever) and compare it against answer_text. Print
-# whatever verdict makes sense; this doesn't need to be a strict
-# pass/fail, a reasoned printout is fine.
 # ════════════════════════════════════════════════════════════════════════
 
 def eval_answer(answer_text: str) -> None:
-    raise NotImplementedError("TODO 2: see the comment block above")
+    """Independently calculates ground truth via sqlite3 and validates the answer."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        # Ground truth step 1: Top country by revenue
+        cursor.execute("""
+            SELECT c.Country, SUM(il.UnitPrice * il.Quantity) as total_rev
+            FROM Customer c
+            JOIN Invoice i ON c.CustomerId = i.CustomerId
+            JOIN InvoiceLine il ON i.InvoiceId = il.InvoiceId
+            GROUP BY c.Country
+            ORDER BY total_rev DESC
+            LIMIT 1;
+        """)
+        top_country, country_rev = cursor.fetchone()
 
+        # Ground truth step 2: Top customer in that country
+        cursor.execute("""
+            SELECT c.FirstName || ' ' || c.LastName as full_name, 
+                   SUM(il.UnitPrice * il.Quantity) as customer_spend
+            FROM Customer c
+            JOIN Invoice i ON c.CustomerId = i.CustomerId
+            JOIN InvoiceLine il ON i.InvoiceId = il.InvoiceId
+            WHERE c.Country = ?
+            GROUP BY c.CustomerId
+            ORDER BY customer_spend DESC
+            LIMIT 1;
+        """, (top_country,))
+        top_customer, customer_spend = cursor.fetchone()
 
-if TASK is None:
-    raise NotImplementedError("TODO 1: see the comment block above")
+    finally:
+        conn.close()
+
+    print("\n" + "=" * 50)
+    print("INDEPENDENT EVALUATION RESULTS:")
+    print("=" * 50)
+    print(f"Ground Truth Country:  {top_country} (${country_rev:.2f})")
+    print(f"Ground Truth Customer: {top_customer} (${customer_spend:.2f})")
+    print("-" * 50)
+
+    # Verification assertions
+    country_match = top_country.lower() in answer_text.lower()
+    customer_match = (
+        top_customer.lower() in answer_text.lower() or 
+        all(part.lower() in answer_text.lower() for part in top_customer.split())
+    )
+
+    if country_match and customer_match:
+        print(" Verdict: [PASS] - The agent identified both the top country and top customer accurately!")
+    else:
+        print("❌ Verdict: [FAIL] - Agent output missed the expected ground truth.")
+    print("=" * 50)
 
 agent = create_deep_agent(
     model=model,
