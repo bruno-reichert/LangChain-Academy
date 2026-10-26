@@ -1,143 +1,128 @@
-# python/m3/m3.3_homework.py
-"""M3.3 Homework: Prove Memory Isolation Between Users.
+# python/m3/m3.2_homework.py
+"""M3.2 Homework: Bundle a Reference File Into Your Skill."""
 
-THE IDEA
-The lab scoped memory to a single fixed workspace_id/user_id and only ever
-ran the agent under that one context, so isolation between users was
-described in the lesson's "Scoping memory" section but never actually shown
-in code. This homework asks you to run the SAME agent under two different
-contexts that share a workspace but belong to different users, seed each
-with different facts, and confirm a detail you tell the agent to remember
-under context A never leaks into what the agent says or stores under
-context B.
-
-WHAT YOU FILL IN
-  TODO 1: write two DIFFERENT seed memories, one for CONTEXT_A and one for
-    CONTEXT_B, in a domain of your choosing (not coding conventions). Both
-    should be about the same general topic so a leak would be obvious if
-    it happened, but with different specifics.
-  TODO 2: write three prompts: a question answerable from A's seed alone, a
-    "remember this" message that adds a new, distinctive fact under
-    context A, and the SAME question asked again but under context B (it
-    should get B's own answer, or no answer, never A's).
-
-RUN
-  cd python
-  uv run ./m3/m3.3_homework.py
-"""
+import tempfile
+from pathlib import Path
 
 from deepagents import create_deep_agent
-from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
-from deepagents.backends.utils import create_file_data
-from langgraph.store.memory import InMemoryStore
+from deepagents.backends.filesystem import FilesystemBackend
 
 from models import model
 
-store = InMemoryStore()
-memory_path = "/memories/AGENTS.md"
-store_memory_path = "/AGENTS.md"
-
-# Same workspace, two different users -- this is the scoping pattern the
-# lesson warns can leak private memories between users if done wrong.
-CONTEXT_A = {"workspace_id": "homework", "user_id": "u_you"}
-CONTEXT_B = {"workspace_id": "homework", "user_id": "u_teammate"}
-
-
-def namespace_from_context(context):
-    return ("memory", context["workspace_id"], context["user_id"])
-
-
-def memory_namespace(runtime):
-    return namespace_from_context(runtime.context)
+SKILL_NAME = "craft-bespoke-cocktail"
+REFERENCE_PATH = f"/skills/{SKILL_NAME}/reference.md"
 
 
 # ════════════════════════════════════════════════════════════════════════
-# TODO 1: Write two different seed memories.
-#
-# Pick a domain that's genuinely yours (not coding style guidelines): a
-# recipe, a reading list, a plant-watering schedule, a training log. Write
-# ONE version for CONTEXT_A (you) and a DIFFERENT version for CONTEXT_B (a
-# teammate), same general topic, different specifics.
-#
-# Example shape (delete this and write your own):
-#   def build_seed_memory_a() -> str:
-#       return """\
-#       # <Your Domain> Notes
-#       - <fact 1>
-#       """
-#   def build_seed_memory_b() -> str:
-#       return """\
-#       # <Your Domain> Notes (teammate's)
-#       - <a different fact>
-#       """
+# TODO 1: Write your own SKILL.md content.
 # ════════════════════════════════════════════════════════════════════════
 
-def build_seed_memory_a() -> str:
-    """TODO 1: return CONTEXT_A's starting memory content."""
-    raise NotImplementedError("TODO 1: see the comment block above")
+def build_skill_md() -> str:
+    return f"""---
+name: {SKILL_NAME}
+description: Use when the user asks to craft, mix, or formulate a bespoke cocktail recipe.
+---
+
+# Craft a Bespoke Cocktail
+
+Follow these steps to construct a balanced cocktail recipe to our speakeasy's house standard.
+
+**Step 1: Identify Profile**: Confirm the user's desired base spirit and preferred style (e.g. sour, spirit-forward, highball, non-alcoholic).
+
+**Step 2: Consult House Reference Guide**: 
+Before writing the spec, you MUST call `read_file` on `{REFERENCE_PATH}` to retrieve our bar's proprietary syrup brix levels, house acid-adjusted citrus formulas, zero-proof bases, and standardized dilution ratios. Do NOT invent your own measurements or guess our house specs.
+
+**Step 3: Construct the Spec**: Build the recipe using the exact proportions, non-alcoholic alternatives, and house ingredients specified in reference.md.
+
+**Step 4: Output the Drink Ticket**: Present the final recipe with:
+- Drink Name
+- Exact measurements in ounces (oz) using house syrups/acids/bases from reference.md
+- Preparation technique (Shake vs. Stir)
+- Glassware and Ice Specification
+- Garnish
+"""
 
 
-def build_seed_memory_b() -> str:
-    """TODO 1: return CONTEXT_B's starting memory content."""
-    raise NotImplementedError("TODO 1: see the comment block above")
+# ════════════════════════════════════════════════════════════════════════
+# TODO 2: Write reference.md's content.
+# ════════════════════════════════════════════════════════════════════════
+
+def build_reference_md() -> str:
+    return """# The House Cocktail Reference & Specs Manual
+
+## 1. Proprietary House Syrups & Modifiers
+- **House 2:1 Demerara Gomme**: 2 parts raw Demerara sugar to 1 part filtered water, 2% gum arabic for velvety mouthfeel. (Rich, caramel, viscous).
+- **Orgeat Royale**: 65 Brix blanched almond syrup infused with roasted almond extract, brandy essence, and 3 drops orange flower water per 500ml.
+- **Zero-Proof Botanical Apertif Cordial**: Infusion of gentian root, bitter orange peel, hibiscus, and juniper berry sweetened with 1.5:1 wildflower honey syrup.
+
+## 2. Acid-Adjusted Citrus Formulations
+- **Acid-Adjusted Grapefruit**: Fresh white grapefruit juice fortified with 3.2% citric acid and 0.8% malic acid powder by weight to equal lime's 6% titratable acidity.
+- **Clarified Super Lemon Juice**: Lemon peel oleo-citrate clarified through agar-agar; shelf-stable for 30 days at 4°C.
+
+## 3. Zero-Proof / Non-Alcoholic Spirit Alternatives
+- **House Distilled Botanical Base (NA)**: Hydrosol blend of juniper, crushed coriander, angelica root, and Persian dried lime (substitute 1:1 for dry gin).
+- **Smoked Tea & Oak Redux (NA)**: Heavy Lapsang Souchong cold-brew reduced with toasted American oak chips and verjus (substitute 1:1 for aged whiskey or rum).
+
+## 4. House Standard Ratios & Build Rules
+- **Standard Sour Formula**: 2.0 oz Base (Alcoholic or House NA) : 0.75 oz Acid-Adjusted Citrus : 0.75 oz House Syrup.
+- **Spirit-Forward / Old Fashioned Ratio**: 2.25 oz Base : 1 barspoon (0.125 oz) 2:1 Demerara Gomme : 2 dashes house bitters.
+- **Low-ABV / Highball Build**: 1.5 oz Base : 0.75 oz Zero-Proof Cordial : 3.5 oz Top-tier soda water, built in Collins glass with spear ice.
+
+## 5. Ice & Glassware Standards
+- Shaken Drinks (contains citrus or cream): Hard shake with dense Kold-Draft cubes for 12 seconds. Double strain into chilled Nick & Nora or Coupe.
+- Stirred Drinks: Stir with Japanese yarai mixing glass for 45 revolutions. Strain over single 2-inch crystal-clear ice block in Double Old Fashioned glass.
+"""
 
 
-store.put(namespace_from_context(CONTEXT_A), store_memory_path, create_file_data(build_seed_memory_a()))
-store.put(namespace_from_context(CONTEXT_B), store_memory_path, create_file_data(build_seed_memory_b()))
+# Write the skill to a scratch directory so it's discoverable through a
+# FilesystemBackend, the same mechanism the lab uses for python/m3/skills/.
+_tmp_root = Path(tempfile.mkdtemp(prefix="m3_2_homework_"))
+_skill_dir = _tmp_root / "skills" / SKILL_NAME
+_skill_dir.mkdir(parents=True, exist_ok=True)
+(_skill_dir / "SKILL.md").write_text(build_skill_md(), encoding="utf-8")
+(_skill_dir / "reference.md").write_text(build_reference_md(), encoding="utf-8")
+
+backend = FilesystemBackend(root_dir=str(_tmp_root), virtual_mode=True)
+print(f"Skill files written to: {_skill_dir}")
+
+
+# ════════════════════════════════════════════════════════════════════════
+# TODO 3: Write a system prompt and a triggering question.
+# ════════════════════════════════════════════════════════════════════════
+
+SYSTEM_PROMPT = """You are Julian, the fastidious Head Mixologist at The Velvet Quill speakeasy.
+You speak with quiet passion about balance, hospitality, and cocktail architecture.
+You treat non-alcoholic drinks with the exact same reverence and culinary rigor as high-proof spirits.
+Always adhere strictly to our house manual and reference guides.
+"""
+
+USER_QUESTION = (
+    "Hey Julian, could you craft a bespoke sour cocktail for me? I love bourbon or rich whiskey flavors, "
+    "but my guest wants a non-alcoholic version with the same balance and complexity. "
+    "What are your house specs for both?"
+)
 
 agent = create_deep_agent(
     model=model,
-    name="Homework_Memory_Agent",
-    backend=CompositeBackend(
-        default=StateBackend(),
-        routes={"/memories/": StoreBackend(namespace=memory_namespace)},
-    ),
-    store=store,
-    memory=[memory_path],
-    system_prompt="You are a helpful personal assistant for this project.",
+    name="Homework_Agent",
+    backend=backend,
+    skills=["/skills"],
+    system_prompt=SYSTEM_PROMPT,
 )
 
+result = agent.invoke({"messages": [{"role": "user", "content": USER_QUESTION}]})
+print("\n" + result["messages"][-1].text)
 
-# ════════════════════════════════════════════════════════════════════════
-# TODO 2: Write your three prompts.
-#
-# RECALL_QUESTION: answerable directly from build_seed_memory_a(), asked
-#   under CONTEXT_A.
-# REMEMBER_MESSAGE: introduces a NEW, distinctive fact under CONTEXT_A that
-#   isn't in either seed (make it specific -- a made-up number or name --
-#   so a leak into context B is unmistakable).
-# LEAK_CHECK_QUESTION: the SAME question as RECALL_QUESTION, asked again
-#   but this time under CONTEXT_B. If isolation holds, the answer should
-#   reflect B's own seed, not A's.
-# ════════════════════════════════════════════════════════════════════════
-
-RECALL_QUESTION = "TODO 2: replace with a question answerable from build_seed_memory_a() alone."
-REMEMBER_MESSAGE = "TODO 2: replace with a 'remember this' message introducing a new, distinctive fact under context A."
-LEAK_CHECK_QUESTION = "TODO 2: replace with the SAME question as RECALL_QUESTION."
-
-# 1. Context A recalls from its own seed.
-result_a1 = agent.invoke({"messages": [{"role": "user", "content": RECALL_QUESTION}]}, context=CONTEXT_A)
-print("--- Context A, Question 1 ---")
-print(result_a1["messages"][-1].text)
-
-# 2. Context A learns a new, distinctive fact.
-result_a2 = agent.invoke({"messages": [{"role": "user", "content": REMEMBER_MESSAGE}]}, context=CONTEXT_A)
-print("\n--- Context A, Question 2 (remember) ---")
-print(result_a2["messages"][-1].text)
-
-# 3. Context B asks the same question. It should NOT see anything from A.
-result_b = agent.invoke({"messages": [{"role": "user", "content": LEAK_CHECK_QUESTION}]}, context=CONTEXT_B)
-print("\n--- Context B, leak-check question ---")
-print(result_b["messages"][-1].text)
-
-memory_a = store.get(namespace_from_context(CONTEXT_A), store_memory_path).value["content"]
-memory_b = store.get(namespace_from_context(CONTEXT_B), store_memory_path).value["content"]
-print("\n--- Context A's stored AGENTS.md ---")
-print(memory_a)
-print("\n--- Context B's stored AGENTS.md ---")
-print(memory_b)
-
-if memory_a == memory_b:
-    print("\nISOLATION FAILED: both contexts share identical stored memory.")
-else:
-    print("\nStored memories differ between contexts, as expected.")
+read_calls = [
+    call
+    for msg in result["messages"]
+    for call in getattr(msg, "tool_calls", [])
+    if call["name"] == "read_file"
+]
+reference_was_read = any(call["args"].get("file_path") == REFERENCE_PATH for call in read_calls)
+print(f"\n--- Did the agent read {REFERENCE_PATH}? {reference_was_read} ---")
+if not reference_was_read:
+    print(
+        "It didn't. Either SKILL.md isn't clearly telling it to, or the "
+        "task is answerable without the details in reference.md."
+    )
