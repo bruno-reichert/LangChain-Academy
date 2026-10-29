@@ -84,17 +84,24 @@ def build_subagents(specs: list[dict]) -> list[dict]:
 
 SUBAGENT_SPECS = [
     {
-        "name": "TODO-1-name-1",
-        "description": "TODO 1: when should the main agent delegate to this one?",
-        "role_prompt": "TODO 1: who is this subagent, and what is its job?",
+        "name": "powertrain-expert",
+        "description": "Consult for engine modifications, turbocharger sizing, fuel systems, and horsepower tuning.",
+        "role_prompt": (
+            "You are a master race engine builder. When asked for powertrain advice, calculate "
+            "realistic horsepower, fuel injector sizing, and turbo selection for the vehicle. "
+            "Keep your final response concise and focused on the key powertrain specifications."
+        ),
     },
     {
-        "name": "TODO-1-name-2",
-        "description": "TODO 1: when should the main agent delegate to this one?",
-        "role_prompt": "TODO 1: who is this subagent, and what is its job?",
+        "name": "chassis-tuner",
+        "description": "Consult for suspension setup, coilovers, brake upgrades, and track alignment geometry.",
+        "role_prompt": (
+            "You are a professional motorsport suspension engineer. When asked for chassis advice, "
+            "determine appropriate coilover spring rates, brake pad compounds, and wheel/tire specs for the vehicle. "
+            "Keep your final response concise and focused on the handling setup."
+        ),
     },
 ]
-
 
 # ════════════════════════════════════════════════════════════════════════
 # TODO 2: Write the main agent's system prompt and a triggering request.
@@ -105,9 +112,21 @@ SUBAGENT_SPECS = [
 # USER_REQUEST should be a task that should make the main agent delegate to
 # BOTH of your subagents.
 # ════════════════════════════════════════════════════════════════════════
+MAIN_PROMPT = """You are the Lead Race Team Coordinator. 
 
-MAIN_PROMPT = """TODO 2: replace this with your own main agent system prompt."""
-USER_REQUEST = "TODO 2: replace this with a request that should trigger delegation to both subagents."
+Your job is to manage a comprehensive vehicle build by delegating to your specialized subagents:
+1. Delegate all engine, turbo, and power decisions to the `powertrain-expert` subagent using the task tool.
+2. Delegate all suspension, brake, and handling decisions to the `chassis-tuner` subagent using the task tool.
+3. Fire off both subagent tasks, collect their polished recommendations, and synthesize a single, cohesive build overview.
+Do not invent specifications yourself; rely strictly on your specialists.
+"""
+
+USER_REQUEST = (
+    "We are building a 1991 Nissan Silvia Q's for fast-road and weekend track use. "
+    "I need a complete plan: target 220 whp from the powertrain, and a balanced "
+    "chassis and brake setup that can handle track sessions without fading. "
+    "Consult your specialists and give me the master build plan."
+)
 
 for _spec in SUBAGENT_SPECS:
     if _spec["name"].startswith("TODO-1"):

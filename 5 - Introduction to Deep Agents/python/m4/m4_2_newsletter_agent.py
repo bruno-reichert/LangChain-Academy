@@ -23,7 +23,9 @@ from tavily import TavilyClient
 from models import model, strong_model
 
 # The distributor's top genres — known up front, no database needed.
-TOP_GENRES = ["Rock", "Latin", "Metal", "Alternative & Punk"]
+# TOP_GENRES = ["Rock", "Latin", "Metal", "Alternative & Punk"]
+# TOP_GENRES = ["Rock", "Latin"]
+TOP_GENRES = ["Rock"]
 
 
 # --- Tools -----------------------------------------------------------------
@@ -39,10 +41,15 @@ _tavily = TavilyClient(api_key=tavily_api_key)
 
 
 @tool
-def internet_search(query: str, max_results: int = 8) -> dict:
+def internet_search(query: str, max_results: int = 2) -> dict:
     """Search the web for recent news. Use this to research what's new in a
     music genre — new releases, notable artists, trends, and events."""
-    return _tavily.search(query, max_results=max_results, topic="news")
+    raw = _tavily.search(query, max_results=max_results, topic="news")
+    # Rule #5: Slice snippets to keep token diet lean and fast!
+    for result in raw.get("results", []):
+        if "content" in result:
+            result["content"] = result["content"][:400]
+    return raw
 
 
 # markdown_to_html belongs ONLY to the editor (the main agent).
