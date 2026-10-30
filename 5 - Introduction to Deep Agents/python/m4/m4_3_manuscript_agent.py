@@ -49,21 +49,17 @@ book_scanner = {
 
 
 # --- The main agent ----------------------------------------------------------
-MANUSCRIPT_PROMPT = """You have access to a manuscript at /epic_corpus.txt: a
-combined public-domain translation of the Iliad, Odyssey, and Aeneid. A
-mischievous editor spliced a handful of anachronistic sentences into it.
+MANUSCRIPT_PROMPT = """You are proofreading a manuscript for an anachronistic sentence.
+The manuscript lives at /epic_corpus.txt.
 
-The manuscript is split into 60 books, each starting with a line formatted
-exactly as "=== EPIC BOOK N ===" (e.g. "=== ILIAD BOOK 9 ===").
+CRITICAL CONTEXT RULE:
+Never read the manuscript text directly into your conversation context with read_file.
+Instead, use the `eval` tool to run JavaScript that:
+1. Reads `/epic_corpus.txt` using `await tools.readFile({ file_path: "/epic_corpus.txt" })`.
+2. Calls the `book-scanner` subagent using `await tools.task({ name: "book-scanner", task: "Scan this text for anachronisms: " + text })`.
+3. Returns only the scanner's findings.
 
-Run a workflow that reads the manuscript, splits it into its 60 books, and
-dispatches one book-scanner subagent call per book, batching 30 books per
-Promise.all round (2 rounds total) rather than the smaller batches shown in
-your tool guidance. Never read a book's full text into your own context; let
-the interpreter hold the file, and let each subagent hold only its own book.
-Collect every subagent's findings into one final report, grouped by
-"EPIC BOOK N", listing the anachronistic sentence(s) found in that book
-(omit books with no findings)."""
+Output the final report naming any corrupted sentence found."""
 
 # The scanner only needs read access to the one manuscript file; no writes.
 manuscript_permissions = [
