@@ -181,3 +181,4 @@ cython_debug/
 .cursorindexingignore
 /1 - Introduction To Langchain/lca-lc-foundations
 3 - Building Reliable Agents/lca-reliable-agents/python/.env.example
+4 - Introduction to Agent Observability & Evaluations/intro-to-langsmith/repomix-output.xml
