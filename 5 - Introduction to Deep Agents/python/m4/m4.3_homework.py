@@ -1,41 +1,5 @@
 # python/m4/m4.3_homework.py
-"""M4.3 Homework: Write Your Own Dynamic Subagent Workflow.
-
-THE IDEA
-The lab gave the main agent a 2MB manuscript split into labeled books and
-had it write a "workflow" that dispatched one book-scanner subagent per
-book, so the full corpus never entered the main model's own context. This
-homework asks you to do the same shape of thing on a scenario of your own
-choosing: a synthetic corpus of your own, split into your own labeled
-sections, and a subagent that scans each section for something other than
-anachronisms.
-
-A few starting points, if you want one:
-  - A Sherlock Holmes story, split by chapter, scanned for clues the
-    detective mentions but never actually explains.
-  - The script of Bee Movie or Shrek, split by scene, scanned for lines
-    that don't match the character who supposedly says them.
-  - Your own corrupted classic, like the lab's, but seeded with a
-    different kind of error: wrong units, swapped character names,
-    continuity errors between chapters.
-
-WHAT YOU FILL IN
-  TODO 1: write your own corpus, a single string split into at least 5
-    labeled sections using a consistent header format (like the lab's
-    "=== EPIC BOOK N ===").
-  TODO 2: write the section-scanner's system prompt (what should it flag in
-    one section?) and the main agent's system prompt (telling it to run a
-    workflow that splits your corpus and dispatches one scanner call per
-    section).
-
-RUN
-  cd python
-  uv run ./m4/m4.3_homework.py
-
-NOTE
-  This uses the code interpreter (langchain_quickjs), same as the lab. Make
-  sure you've run `uv sync` from python/ so it's installed.
-"""
+"""M4.3 Homework: Write Your Own Dynamic Subagent Workflow."""
 
 from pathlib import Path
 
@@ -52,50 +16,39 @@ CORPUS_PATH = DATA_DIR / "my_corpus.txt"
 
 # ════════════════════════════════════════════════════════════════════════
 # TODO 1: Write your own corpus.
-#
-# Requirements:
-#   - A single string with at least 5 labeled sections.
-#   - Pick a consistent header format, e.g. "=== SECTION N ===" or
-#     "=== TICKET N ===", and stick to it exactly: the main agent's prompt
-#     (TODO 2) needs to describe the same format so it can split on it.
-#   - Plant something worth finding in a few of the sections (an off-topic
-#     sentence, a specific keyword, whatever your scanner in TODO 2 is
-#     looking for) so there's something for the workflow to actually
-#     surface.
-#
-# Example shape (delete this and write your own):
-#   return """\
-#   === SECTION 1 ===
-#   ...
-#
-#   === SECTION 2 ===
-#   ...
-#   """
 # ════════════════════════════════════════════════════════════════════════
 
 def build_corpus() -> str:
-    """TODO 1: return your own corpus string with at least 5 sections."""
-    raise NotImplementedError("TODO 1: see the comment block above")
+    return """=== TICKET 1 ===
+My Outlook is freezing every time I try to open a PDF attachment. I already tried restarting the laptop and running updates.
 
+=== TICKET 2 ===
+The breakroom microwave is making a loud buzzing sound. Also, shiver me timbers, hand over the captain's doubloons or walk the plank! Need maintenance to look at it.
+"""
 
-CORPUS_PATH.write_text(build_corpus())
+# Crucial step: Actually write the corpus to disk so the agent can find it!
+CORPUS_PATH.write_text(build_corpus(), encoding="utf-8")
 
 
 # ════════════════════════════════════════════════════════════════════════
 # TODO 2: Write the scanner and main agent prompts.
-#
-# Return (scanner_prompt, main_prompt):
-#   - scanner_prompt: what the section-scanner subagent should look for in
-#     ONE section it's handed, and what it should return.
-#   - main_prompt: tells the main agent about the corpus file, the header
-#     format from TODO 1, and to run a WORKFLOW that splits the corpus and
-#     dispatches one scanner call per section (the word "workflow" is what
-#     triggers code-based dispatch, see the lesson).
 # ════════════════════════════════════════════════════════════════════════
 
 def build_prompts() -> tuple[str, str]:
-    """TODO 2: return (scanner_prompt, main_prompt)."""
-    raise NotImplementedError("TODO 2: see the comment block above")
+    scanner_prompt = """You are inspecting a single IT support ticket for inappropriate pirate slang or nautical phrases.
+Scan the text you are given for words like 'shiver me timbers', 'walk the plank', 'doubloons', 'arr', 'cannons', etc.
+Return ONLY a JSON array of the exact sentences or phrases you found that contain pirate talk, e.g. ["phrase 1"]. 
+If the ticket contains no pirate slang, return strictly []."""
+
+    main_prompt = """You have access to a support ticket log at /my_corpus.txt.
+A prankster spliced pirate slang into some of the tickets.
+
+The log is split into tickets, each starting with "=== TICKET N ===".
+
+Run a workflow that reads the file at `/my_corpus.txt`, splits it into each ticket, and dispatches one call per ticket to the `section-scanner` subagent using the task tool.
+Collect the findings and compile a final summary listing which tickets had pirate phrases and quoting the phrases found (omit clean tickets)."""
+
+    return scanner_prompt, main_prompt
 
 
 SCANNER_PROMPT, MAIN_PROMPT = build_prompts()
@@ -123,10 +76,11 @@ result = agent.invoke(
         "messages": [
             {
                 "role": "user",
-                "content": "Run a workflow to scan every section of my_corpus.txt and report what you find.",
+                "content": "Run a workflow to scan every section of /my_corpus.txt and report what you find.",
             }
         ]
     },
     config={"recursion_limit": 100},
 )
-print(result["messages"][-1].text)
+
+print("\n" + result["messages"][-1].text)

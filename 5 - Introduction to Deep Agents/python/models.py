@@ -41,8 +41,8 @@ from langchain.chat_models import init_chat_model
 
 # --- GROQ PRESETS (Uncomment as needed) ---
 # Groq 120B (Primary / Strong model fallback):
-model = init_chat_model("groq:openai/gpt-oss-120b", timeout=60, max_retries=2)
-strong_model = init_chat_model("groq:openai/gpt-oss-120b", timeout=120, max_retries=2)
+# model = init_chat_model("groq:openai/gpt-oss-120b", timeout=60, max_retries=2)
+# strong_model = init_chat_model("groq:openai/gpt-oss-120b", timeout=120, max_retries=2)
 
 # Groq 20B (Fast subagent / Sharded quota fallback):
 # model = init_chat_model("groq:openai/gpt-oss-20b", timeout=60, max_retries=2)
@@ -58,19 +58,19 @@ strong_model = init_chat_model("groq:openai/gpt-oss-120b", timeout=120, max_retr
 from langchain_openai import ChatOpenAI
 
 # Default free endpoint suggested by the course:
-# model = ChatOpenAI(
-#     model="nvidia/nemotron-3-ultra-550b-a55b:free",
-#     base_url="https://openrouter.ai/api/v1",
-#     api_key=os.environ.get("OPENROUTER_API_KEY"),
-#     temperature=0.1,
-# )
+model = ChatOpenAI(
+    model="nvidia/nemotron-3-ultra-550b-a55b:free",
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ.get("OPENROUTER_API_KEY"),
+    temperature=0.1,
+)
 
-# strong_model = ChatOpenAI(
-#     model="nvidia/nemotron-3-ultra-550b-a55b:free",
-#     base_url="https://openrouter.ai/api/v1",
-#     api_key=os.environ.get("OPENROUTER_API_KEY"),
-#     temperature=0.1,
-# )
+strong_model = ChatOpenAI(
+    model="nvidia/nemotron-3-ultra-550b-a55b:free",
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ.get("OPENROUTER_API_KEY"),
+    temperature=0.1,
+)
 
 
 # Or any active free open-source model on OpenRouter, for example:

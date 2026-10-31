@@ -33,13 +33,73 @@ from models import model
 
 # TODO 1: replace this with your own @tool-decorated function.
 @tool
-def lookup_fact(topic: str) -> str:
-    """TODO 1: replace this with your own tool on a topic of your choosing."""
-    raise NotImplementedError("TODO 1: see the comment block above")
+def lookup_f1_cars(car_name: str) -> str:
+    """Look up historical specifications, engine type, championship status, and legendary drivers for classic F1 cars (1950s-1990s)."""
+    database = {
+        "alfa romeo 158": {
+            "name": "1950 Alfa Romeo 158 'Alfetta'",
+            "team": "Alfa Romeo",
+            "era": "1950",
+            "engine": "1.5L Straight-8 Supercharged (~350 hp)",
+            "drivers": ["Giuseppe Farina", "Juan Manuel Fangio", "Luigi Fagioli"],
+            "trivia": "Undefeated in the inaugural 1950 Formula One World Championship."
+        },
+        "lotus 49": {
+            "name": "1967 Lotus 49",
+            "team": "Team Lotus",
+            "era": "1960s",
+            "engine": "3.0L Ford Cosworth DFV V8 (~400 hp)",
+            "drivers": ["Jim Clark", "Graham Hill"],
+            "trivia": "Introduced the revolutionary concept of using the engine as a fully stressed structural chassis member."
+        },
+        "mclaren mp4/4": {
+            "name": "1988 McLaren MP4/4",
+            "team": "McLaren Honda",
+            "era": "1980s Turbo Era",
+            "engine": "1.5L Honda RA168E V6 Twin-Turbo (~650+ hp)",
+            "drivers": ["Ayrton Senna", "Alain Prost"],
+            "trivia": "Won 15 out of 16 races in 1988, achieving a 93.8% win rate."
+        },
+        "jordan 191": {
+            "name": "1991 Jordan 191",
+            "team": "Team 7Up Jordan",
+            "era": "1990s",
+            "engine": "3.5L Ford HBA4 V8 (~680 hp)",
+            "drivers": ["Michael Schumacher", "Bertrand Gachot", "Andrea de Cesaris"],
+            "trivia": "Michael Schumacher's F1 debut; widely praised as the most aesthetic F1 car ever painted."
+        },
+        "williams fw14b": {
+            "name": "1992 Williams FW14B",
+            "team": "Williams Renault",
+            "era": "1990s High-Tech Era",
+            "engine": "3.5L Renault RS3C V10 (~750 hp)",
+            "drivers": ["Nigel Mansell", "Riccardo Patrese"],
+            "trivia": "Dominated with computer-controlled active suspension and traction control."
+        },
+    }
+
+    q = car_name.lower()
+    for key, spec in database.items():
+        if key in q or any(part in q for part in key.split()):
+            # Format dict nicely into a string for the model
+            drivers_str = ", ".join(spec["drivers"])
+            return (
+                f"Car: {spec['name']} | Team: {spec['team']} | Era: {spec['era']} | "
+                f"Engine: {spec['engine']} | Drivers: {drivers_str} | Trivia: {spec['trivia']}"
+            )
+
+    available = ", ".join(k.title() for k in database.keys())
+    return f"Car '{car_name}' not found in archive. Available cars: {available}"
 
 
 # TODO 2: replace this with your own persona system prompt.
-SYSTEM_PROMPT = """TODO 2: replace this with your own system prompt."""
+SYSTEM_PROMPT = """You are Murray, an eccentric, hyper-caffeinated motorsport historian and legendary F1 broadcaster.
+You speak with infectious enthusiasm, dramatic flair, and deep reverence for the screaming engines and daring drivers of Formula 1 history.
+
+Rules:
+- Whenever a user asks about a classic Formula 1 car, you MUST call the `lookup_f1_cars` tool to retrieve the authentic archive specs. Never guess chassis details or engine types.
+- Weave the facts from the database into your dramatic, passionate broadcast commentary style!
+"""
 
 # `langgraph.json` points at this module-level variable: "./agent.py:graph".
-graph = create_deep_agent(model=model, tools=[lookup_fact], system_prompt=SYSTEM_PROMPT)
+graph = create_deep_agent(model=model, tools=[lookup_f1_cars], system_prompt=SYSTEM_PROMPT)
