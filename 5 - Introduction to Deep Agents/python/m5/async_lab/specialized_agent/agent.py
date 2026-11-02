@@ -18,9 +18,9 @@ other remote deployment.
 """
 
 import time
-
+import os
 import pandas as pd
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 
 from deepagents import create_deep_agent
@@ -51,8 +51,12 @@ def analyze_sales(group_by: str = "region") -> str:
     ]
     return "\n".join(lines)
 
-
-model = ChatAnthropic(model="claude-haiku-4-5")
+model = ChatOpenAI(
+    model="nvidia/nemotron-3-ultra-550b-a55b:free",
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ.get("OPENROUTER_API_KEY"),
+    temperature=0.1,
+)
 
 # langgraph.json points at this module-level variable: "./agent.py:graph"
 graph = create_deep_agent(model=model, tools=[analyze_sales])

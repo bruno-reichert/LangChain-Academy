@@ -1,0 +1,201 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+main_agent/
+  agent.py
+  langgraph.json
+specialized_agent/
+  agent.py
+  langgraph.json
+  pyproject.toml
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="main_agent/agent.py">
+# python/m5/async_lab/main_agent/agent.py
+"""M5.4 Lab: the main agent, delegating to a separate, specialized deployment.
+
+THE IDEA
+This agent stays light: it pulls the shared model from the course's
+models.py and depends on the same shared environment every other lab in
+the course uses. It delegates all sales analysis to an async
+subagent, "analyst", running as its OWN deployment on port 2025 (see
+../specialized_agent). That deployment carries a heavier dependency
+(pandas) this agent never needs to install.
+
+RUN
+  Start ../specialized_agent first (see its own docstring), then:
+    cd python/m5/async_lab/main_agent
+    uv run langgraph dev
+Chat with it in the Studio window that opens. Ask it to run two analyses
+at once (e.g. by region and by product), then keep chatting, it should
+report two task_ids right away. From there you can update one task with
+new instructions, cancel the other, and check on what's left.
+"""
+
+from deepagents import AsyncSubAgent, create_deep_agent
+from models import model
+
+subagents = [
+    AsyncSubAgent(
+        name="analyst",
+        description=(
+            "Runs sales analysis grouped by region or by product, returning total "
+            "revenue and units sold per group, ranked by revenue - that's all the "
+            "data available, so don't ask it for anything else (e.g. average "
+            "transaction value, transaction counts, or growth metrics). Slow (it's "
+            "a heavyweight pandas job), so it lives on its own deployment instead "
+            "of running in-process here. Launch one task per grouping if you need "
+            "both."
+        ),
+        graph_id="agent",
+        url="http://127.0.0.1:2025",
+    ),
+]
+
+# langgraph.json points at this module-level variable: "./agent.py:graph"
+graph = create_deep_agent(model=model, subagents=subagents)
+</file>
+
+<file path="main_agent/langgraph.json">
+{
+  "dependencies": ["../../.."],
+  "graphs": {
+    "agent": "./agent.py:graph"
+  },
+  "env": "../../../.env"
+}
+</file>
+
+<file path="specialized_agent/agent.py">
+# python/m5/async_lab/specialized_agent/agent.py
+"""M5.4 Lab: the "specialized" deployment.
+
+THE IDEA
+This is a second, independent deployment, not a folder inside the shared
+course environment. It has its own pyproject.toml and its own model setup,
+so pandas (needed for the analysis tool below) is installed only here,
+never in the shared environment every other lab in the course depends on.
+Its langgraph.json also declares "dependencies": ["."] instead of the usual
+["../.."], which is what makes that isolation real.
+
+RUN
+  cd python/m5/async_lab/specialized_agent
+  uv run langgraph dev --port 2025
+Leave this running, then start ../main_agent in a second terminal. The main
+agent reaches this one over HTTP at http://127.0.0.1:2025, exactly like any
+other remote deployment.
+"""
+
+import time
+
+import pandas as pd
+from langchain_anthropic import ChatAnthropic
+from langchain_core.tools import tool
+
+from deepagents import create_deep_agent
+
+SALES = pd.DataFrame(
+    {
+        "region": ["West", "West", "East", "East", "Central", "Central"],
+        "product": ["Widget", "Gadget", "Widget", "Gadget", "Widget", "Gadget"],
+        "units_sold": [1200, 850, 980, 1400, 630, 720],
+        "revenue": [36000, 42500, 29400, 70000, 18900, 36000],
+    }
+)
+
+
+@tool
+def analyze_sales(group_by: str = "region") -> str:
+    """Run a full sales breakdown, grouped by "region" or by "product", ranked highest revenue first.
+
+    This is a slow, heavyweight analysis job, not something you'd want
+    blocking the main agent's own model calls.
+    """
+    time.sleep(20)  # stands in for a genuinely slow job (a big pandas pipeline, a model call, etc.)
+    key = group_by if group_by in ("region", "product") else "region"
+    grouped = SALES.groupby(key)[["units_sold", "revenue"]].sum().sort_values("revenue", ascending=False)
+    lines = [
+        f"{name}: ${int(row['revenue']):,} revenue, {int(row['units_sold']):,} units"
+        for name, row in grouped.iterrows()
+    ]
+    return "\n".join(lines)
+
+
+model = ChatAnthropic(model="claude-haiku-4-5")
+
+# langgraph.json points at this module-level variable: "./agent.py:graph"
+graph = create_deep_agent(model=model, tools=[analyze_sales])
+</file>
+
+<file path="specialized_agent/langgraph.json">
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./agent.py:graph"
+  },
+  "env": "../../../.env"
+}
+</file>
+
+<file path="specialized_agent/pyproject.toml">
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "async-lab-specialized-agent"
+version = "0.1.0"
+requires-python = ">=3.11,<3.15"
+
+dependencies = [
+    "deepagents==0.7.0",
+    "langgraph>=1.0.0,<2.0",
+    "langchain-anthropic",
+    "langgraph-cli[inmem]>=0.4.0",
+    "pandas>=2.2.0",
+]
+</file>
+
+</files>
