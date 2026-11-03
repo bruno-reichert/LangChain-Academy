@@ -1,0 +1,1431 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+data/
+  chinook.db
+mcp/
+  seeds/
+    incoming_rfq.json
+  mail_store.py
+  mock_mail_server.py
+  send_to_inbox.py
+skills/
+  rfq-quote/
+    SKILL.md
+  territory-report/
+    SKILL.md
+  weekly-newsletter/
+    SKILL.md
+tools/
+  __init__.py
+  html.py
+  search.py
+  sql.py
+agent.py
+AGENTS.md
+async_research.py
+langgraph.json
+newsletter_agent_graph.py
+start.sh
+stop_sandboxes.py
+subagents.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="mcp/seeds/incoming_rfq.json">
+{
+  "id": "msg-1",
+  "from": "Morgan Vale <morgan.vale@northern-lights-cafes.example>",
+  "subject": "Quote request - bulk Rock & Metal tracks",
+  "date": "2026-06-12T09:14:00Z",
+  "body": "Hi Jane,\n\nWe spoke briefly at the trade show last month - I run procurement for a chain of themed cafes and we'd like to license background music for our locations.\n\nCould you put together a quote for the following?\n\n- 40 Rock tracks\n- 25 Metal tracks\n- 10 of your best-selling tracks overall (your pick)\n\nWe're a new account - I don't think we're in your system yet. Company is Northern Lights Cafes, and you can reach me at this address.\n\nIf the pricing works we'd want to move quickly. Thanks!\n\nMorgan Vale\nProcurement, Northern Lights Cafes"
+}
+</file>
+
+<file path="mcp/mail_store.py">
+# python/m5/mcp/mail_store.py
+"""A tiny JSON-file mailbox shared by the mock Gmail MCP server and the
+`send_to_inbox` inject CLI.
+
+The store is deliberately dumb: one JSON file with two lists, ``inbox`` and
+``drafts``. It exists so the course's Gmail features work offline, with no
+OAuth, while presenting the *same* tool surface as a real Gmail MCP server
+(``list_messages`` / ``read_message`` / ``create_draft``). Nothing here is
+Gmail-specific — it is just enough state to demo the assistant.
+
+Paths are resolved from this file's location, so the store works no matter
+what working directory the MCP subprocess is launched from.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+# The mailbox lives next to this module, under the module's own directory.
+_STORE_PATH = Path(__file__).resolve().parent / "mail_store.json"
+_SEEDS_DIR = Path(__file__).resolve().parent / "seeds"
+
+
+def _empty_store() -> dict[str, list[dict[str, Any]]]:
+    return {"inbox": [], "drafts": []}
+
+
+def load_store() -> dict[str, list[dict[str, Any]]]:
+    """Read the mailbox, seeding it from ``seeds/`` on first use.
+
+    If no store file exists yet, every ``*.json`` fixture in ``seeds/`` is
+    loaded into the inbox so a fresh checkout has a quote request waiting.
+    """
+    if _STORE_PATH.exists():
+        with _STORE_PATH.open(encoding="utf-8") as f:
+            return json.load(f)
+
+    store = _empty_store()
+    for seed in sorted(_SEEDS_DIR.glob("*.json")):
+        with seed.open(encoding="utf-8") as f:
+            store["inbox"].append(json.load(f))
+    save_store(store)
+    return store
+
+
+def save_store(store: dict[str, list[dict[str, Any]]]) -> None:
+    """Persist the mailbox to disk."""
+    with _STORE_PATH.open("w", encoding="utf-8") as f:
+        json.dump(store, f, indent=2)
+
+
+def next_id(messages: list[dict[str, Any]], prefix: str) -> str:
+    """Return the next sequential id like ``msg-1`` / ``draft-3``."""
+    n = 1 + sum(1 for m in messages if str(m.get("id", "")).startswith(prefix))
+    return f"{prefix}-{n}"
+</file>
+
+<file path="mcp/mock_mail_server.py">
+# python/m5/sales_assistant/mcp/mock_mail_server.py
+"""A local, offline mock mail MCP server.
+
+Exposes three tools over HTTP (streamable-http transport) on port 5002:
+
+    mail_list_messages(query)            -> summaries of inbox mail
+    mail_read_message(message_id)        -> the full body of one message
+    mail_create_draft(to, subject, body) -> save a reply to the drafts folder
+
+State is a small JSON file managed by mail_store.py. Started by start.sh
+before langgraph dev so make_graph() can discover the tools at startup.
+"""
+
+from __future__ import annotations
+
+from mail_store import load_store, next_id, save_store
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("mock-mail", host="127.0.0.1", port=5002)
+
+
+@mcp.tool()
+def mail_list_messages(query: str = "") -> list[dict]:
+    """List messages in the inbox.
+
+    Returns a summary (id, sender, subject, date, snippet) for each message —
+    not the full body. Use read_message to open one. The optional ``query`` is
+    a case-insensitive substring matched against the subject and sender, mostly
+    to mirror Gmail's search box; leave it empty to list everything.
+    """
+    store = load_store()
+    q = query.strip().lower()
+    out = []
+    for m in store["inbox"]:
+        haystack = f"{m.get('subject', '')} {m.get('from', '')}".lower()
+        if q and q not in haystack:
+            continue
+        body = m.get("body", "")
+        out.append(
+            {
+                "id": m.get("id"),
+                "from": m.get("from"),
+                "subject": m.get("subject"),
+                "date": m.get("date"),
+                "snippet": body[:140] + ("…" if len(body) > 140 else ""),
+            }
+        )
+    return out
+
+
+@mcp.tool()
+def mail_read_message(message_id: str) -> dict:
+    """Return the full message (sender, subject, date, complete body) by id."""
+    store = load_store()
+    for m in store["inbox"]:
+        if m.get("id") == message_id:
+            return m
+    return {"error": f"No message with id {message_id!r}."}
+
+
+@mcp.tool()
+def mail_create_draft(to: str, subject: str, body: str) -> dict:
+    """Save a reply to the drafts folder. Does NOT send.
+
+    Mirrors a real Gmail "create draft" call: the message is staged for the
+    human to review and send later. In this course a human-in-the-loop gate
+    runs before this tool, so a draft is only written after explicit approval.
+    """
+    store = load_store()
+    draft = {
+        "id": next_id(store["drafts"], "draft"),
+        "to": to,
+        "subject": subject,
+        "body": body,
+    }
+    store["drafts"].append(draft)
+    save_store(store)
+    return {"status": "draft_saved", "draft_id": draft["id"], "to": to, "subject": subject}
+
+
+if __name__ == "__main__":
+    mcp.run(transport="streamable-http")
+</file>
+
+<file path="mcp/send_to_inbox.py">
+# python/m5/sales_assistant/mcp/send_to_inbox.py
+"""Drop a message into the mock mailbox — the offline stand-in for "a customer
+just emailed you."
+
+Run with no arguments to load the bundled RFQ fixture(s) from ``seeds/``; or
+pass --from / --subject / --body to inject a custom message. Either way the new
+message lands in the inbox and the assistant can find it with list_messages.
+
+Examples:
+    uv run python mcp/send_to_inbox.py
+    uv run python mcp/send_to_inbox.py --reset
+    uv run python mcp/send_to_inbox.py --from "a@b.example" \\
+        --subject "Quote please" --body "Can I get 12 Jazz tracks?"
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from mail_store import _SEEDS_DIR, _empty_store, load_store, next_id, save_store
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Inject a message into the mock inbox.")
+    parser.add_argument("--from", dest="sender", help="Sender address.")
+    parser.add_argument("--subject", help="Message subject.")
+    parser.add_argument("--body", help="Message body.")
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Clear the mailbox (inbox + drafts) and re-seed from seeds/.",
+    )
+    args = parser.parse_args()
+
+    if args.reset:
+        store = _empty_store()
+        for seed in sorted(_SEEDS_DIR.glob("*.json")):
+            store["inbox"].append(json.loads(Path(seed).read_text(encoding="utf-8")))
+        save_store(store)
+        print(f"Mailbox reset. Inbox now has {len(store['inbox'])} message(s).")
+        return
+
+    store = load_store()
+    if args.sender or args.subject or args.body:
+        msg = {
+            "id": next_id(store["inbox"], "msg"),
+            "from": args.sender or "unknown@example.com",
+            "subject": args.subject or "(no subject)",
+            "date": "2026-06-14T12:00:00Z",
+            "body": args.body or "",
+        }
+        store["inbox"].append(msg)
+        save_store(store)
+        print(f"Injected {msg['id']} from {msg['from']!r}.")
+    else:
+        # No custom fields: make sure the seed fixtures are present.
+        load_store()  # seeds on first use
+        store = load_store()
+        print(f"Inbox has {len(store['inbox'])} message(s). Use --reset to re-seed.")
+
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="skills/rfq-quote/SKILL.md">
+---
+name: rfq-quote
+description: "Process an incoming request for quote (RFQ) from a customer: read the email, look up the customer and catalogue prices, compute a quote, have it reviewed, draft the reply, and log it. Use whenever a customer asks for a price, a quote, or to license/buy a batch of tracks."
+---
+
+# Processing a Request for Quote
+
+Follow these steps in order. Keep a todo list so Jane can see progress.
+
+## 1. Read the request
+
+- Ask **inbox-manager** to find the request and read it in full. Pull out: who
+  is asking, their company/email, and exactly what they want (which
+  genres/tracks, how many of each).
+
+## 2. Identify the customer
+
+- Ask **chinook-analyst** to find the customer by email (and name as a
+  fallback).
+- **If they are not in the system**, ask chinook-analyst to add them with
+  `add_customer`. The system pauses automatically for Jane to approve — the
+  analyst should just make the call, not ask in prose. Once approved, continue.
+
+## 3. Get the prices
+
+- Ask **chinook-analyst** for the unit prices needed:
+  - For "N tracks in genre X": the count of available tracks and the standard
+    `UnitPrice` for that genre (tracks are normally $0.99; verify, don't assume).
+  - For "best-selling tracks": ask the analyst for the top sellers by quantity.
+- Get real numbers from the database; never guess a price.
+
+## 4. Compute the quote (exactly)
+
+- Use the **code interpreter** to do the arithmetic — quantities × unit prices,
+  any line discounts, and the total. Never hand-add money.
+- A reasonable default volume discount: 10% off when the order is 50+ tracks.
+  State the discount explicitly in the quote.
+
+## 5. Have it reviewed
+
+- Send the line items and totals to **quote-reviewer**. Apply its corrections
+  before drafting.
+
+## 6. Draft the reply
+
+- Write a short, friendly reply from Jane: thank them, list each line
+  (description, qty, unit price, line total), show any discount and the grand
+  total, and offer next steps.
+- Ask **inbox-manager** to save it as a draft to the sender, passing the
+  subject and the full body. The system pauses automatically for Jane to
+  approve or edit the wording before it's saved — don't ask for permission in a
+  message first. Drafts are never auto-sent.
+
+## 7. Log it
+
+- Append one line to `/outputs/quotes_ledger.md` recording: date, customer,
+  items summary, total, and the draft id. Create the file with a header row if
+  it doesn't exist yet.
+
+## Done
+
+Tell Jane the draft is in her drafts folder and summarize the quote total.
+</file>
+
+<file path="skills/territory-report/SKILL.md">
+---
+name: territory-report
+description: "Build a report on the rep's sales territory — revenue, top customers, top genres, and trends for Jane's book of business — with a chart. Use when asked for a territory report, sales summary, performance numbers, or 'how is my book doing'."
+---
+
+# Territory Report
+
+A metrics task. The numbers come from the database; the chart is rendered
+from them.
+
+## 1. Gather the metrics
+
+Ask **chinook-analyst** for Jane's book of business (`SupportRepId = 3`):
+
+- Total revenue and number of invoices.
+- Top customers by revenue (with amounts).
+- Revenue by genre (for Jane's customers).
+- Any obvious trend (e.g. revenue by year, if useful).
+
+Get exact figures; do the arithmetic with the **code interpreter** if you need
+to combine results.
+
+## 2. Write the report
+
+- Use the code interpreter to get a timestamp:
+  `new Date().toISOString().slice(0, 19).replace(/:/g, '-')` — this is
+  date-and-time, not just the date, so a report requested again later the
+  same day doesn't silently overwrite the earlier one.
+- `write_file` a clear Markdown report to
+  `/outputs/territory_report-<timestamp>.md`: headline totals, a
+  top-customers list, and a revenue-by-genre table.
+
+## 3. Chart
+
+Write a short Python script with `write_file` that plots the revenue-by-genre
+figures as a pie chart with matplotlib and saves it to
+`/outputs/territory_chart-<timestamp>.png` (same timestamp as step 2), then
+run it with `execute` (installing matplotlib first if it isn't already
+available). Reference the image in the report using just the bare filename
+(e.g. `![Revenue by Genre](territory_chart-<timestamp>.png)`), not the
+absolute `/outputs/...` path — when Jane downloads the report and chart,
+both land together in the same local folder with no `outputs` subdirectory,
+so a relative filename is what actually resolves; the absolute path is only
+correct for the chat-reply embed below.
+
+## Done
+
+Tell Jane where the report and chart were saved, with the headline revenue
+number. Embed the chart in your reply itself as a Markdown image —
+`![Revenue by Genre](/outputs/territory_chart-<timestamp>.png)` — using
+that exact absolute path (the same timestamped filename from step 3), not
+just mentioning the filename as text, so it renders inline in the chat
+instead of only showing up as a download link.
+</file>
+
+<file path="skills/weekly-newsletter/SKILL.md">
+---
+name: weekly-newsletter
+description: "Produce the weekly 'This Week in Music' customer newsletter by researching the distributor's top genres and assembling a styled HTML page. Use when asked to create, write, or send the weekly newsletter or a music-news roundup."
+---
+
+# Weekly Newsletter
+
+A background job. Launch it, then get out of the way — newsletter-agent
+researches every genre and assembles the finished HTML itself.
+
+## 1. Pick the genres
+
+- If Jane named genres, use those. Otherwise ask **chinook-analyst** for the
+  top 4 genres by revenue across the catalogue and feature those.
+
+## 2. Launch in the background
+
+- Call `start_async_task(subagent_type="newsletter-agent", description=...)`
+  **once**, with the genre list in `description` (e.g. "Research and
+  assemble this week's newsletter for these genres: Rock, Latin, Jazz,
+  Classical"). It returns a task ID immediately; it does not block.
+- Tell Jane the newsletter is being put together in the background, then
+  **stop**. Do not poll — check on it the next time she asks.
+- Do **not** research genres or assemble the newsletter yourself — that's
+  entirely newsletter-agent's job.
+
+## 3. When asked whether it's ready
+
+- Get the task_id: call `list_async_tasks()` and read the `task_id:` field for
+  the newsletter-agent entry. Don't rely on the task_id from earlier in the
+  conversation — it may have scrolled out of context or been summarized away;
+  `list_async_tasks` reads it from durable state, not memory.
+- Call `check_async_task(task_id)`.
+- If `status` isn't terminal yet (`success` or `error`), report progress to
+  Jane and stop — check again the next time she asks.
+- If `status` is `error`, tell Jane the newsletter couldn't be put together
+  this week and stop — there's no HTML to save.
+- If `status` is `success`, `result` is the finished HTML, verbatim — no
+  markdown conversion needed here, newsletter-agent already did that.
+  Continue to step 4 immediately, in the same turn — don't ask Jane for
+  permission first. She already asked for the newsletter back in step 1; a
+  completed background job isn't a new decision that needs re-confirming.
+
+## 4. Save (once)
+
+- You can be asked more than once for the same task_id (e.g. Jane asks "is
+  it ready?" again after you already saved it) — don't save a duplicate
+  file. Check deterministically, not from conversation memory (which can be
+  summarized away): call `glob("/outputs/newsletter-*-<task_id, first 8
+  chars>.html")`. If that already matches a file, tell Jane it's already
+  saved at that path and stop.
+- Otherwise, use the code interpreter to get a timestamp:
+  `new Date().toISOString().slice(0, 19).replace(/:/g, '-')` — this is
+  date-and-time, not just the date, so a genuinely new newsletter request
+  later the same day produces a new file instead of overwriting the last
+  one.
+- `write_file` the HTML from step 3 **exactly as returned** — no edits, no
+  added commentary — to
+  `/outputs/newsletter-<timestamp>-<task_id, first 8 chars>.html`.
+
+## Done
+
+Tell Jane where the newsletter was saved. If the HTML you just saved
+mentions a genre that didn't make it in (newsletter-agent notes this itself
+when a genre's research fails), pass that along in your own words.
+</file>
+
+<file path="tools/__init__.py">
+# python/m5/tools/__init__.py
+"""Custom tools for the Chinook Sales Assistant."""
+</file>
+
+<file path="tools/html.py">
+# python/m5/tools/html.py
+"""Render the weekly newsletter Markdown into a styled, sanitized HTML page.
+
+Belongs to the main agent. The HTML shell is a fixed, trusted template; the
+newsletter body is derived from untrusted web-search text, so it is run through
+an allowlist sanitizer (nh3) before it goes into the page — stripping any
+<script>, onerror=, etc. that a search result might have smuggled in.
+"""
+
+from __future__ import annotations
+
+import markdown as md
+import nh3
+from langchain_core.tools import tool
+
+_HTML_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>
+  body {{ max-width: 760px; margin: 40px auto; padding: 0 20px;
+          font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+          line-height: 1.6; color: #1a1a1a; }}
+  h1 {{ font-size: 2rem; border-bottom: 3px solid #006DDD; padding-bottom: .3em; }}
+  h2 {{ color: #006DDD; margin-top: 1.6em; }}
+  footer {{ margin-top: 3em; color: #777; font-size: .85rem;
+            border-top: 1px solid #ddd; padding-top: 1em; }}
+</style>
+</head>
+<body>
+{body}
+<footer>Generated by the Chinook Sales Assistant.</footer>
+</body>
+</html>"""
+
+
+@tool
+def markdown_to_html(markdown_text: str, title: str = "This Week in Music") -> str:
+    """Convert a Markdown newsletter into a complete, styled HTML page.
+    Returns the full HTML document as a string."""
+    body = md.markdown(markdown_text, extensions=["tables", "fenced_code"])
+    # The body is built from untrusted web search, so allowlist-sanitize it
+    # before rendering. The template itself is trusted and left intact.
+    body = nh3.clean(body)
+    return _HTML_TEMPLATE.format(title=title, body=body)
+</file>
+
+<file path="tools/search.py">
+# python/m5/tools/search.py
+"""Web search tool for the genre-researcher subagent (weekly newsletter).
+
+Thin wrapper over Tavily, identical in spirit to the Module 4 lab. Belongs only
+to the research subagent. Requires TAVILY_API_KEY in the environment; if it's
+absent the tool is simply not registered (see subagents.py), so the rest of the
+assistant still runs.
+"""
+
+from __future__ import annotations
+
+import os
+import time
+
+from langchain_core.tools import tool
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from tavily import TavilyClient
+
+_MAX_ATTEMPTS = 3
+_RETRY_DELAY_SECONDS = 2
+
+
+@tool
+def internet_search(query: str, max_results: int = 8) -> dict:
+    """Search the web for recent news. Use this to research what's new in a
+    music genre — new releases, notable artists, trends, and events."""
+    # A fresh client per call, not a shared module-level singleton — the
+    # newsletter-agent's genre research fires several of these concurrently
+    # in one turn (LangGraph's ToolNode gathers tool calls in parallel
+    # threads), and a shared TavilyClient's connection pool was getting
+    # handed pooled keep-alive sockets the remote had already closed,
+    # surfacing as ConnectionResetError. Retrying covers any remaining
+    # one-off resets.
+    client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
+    last_error: RequestsConnectionError | None = None
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            return client.search(query, max_results=max_results, topic="news")
+        except RequestsConnectionError as e:
+            last_error = e
+            if attempt < _MAX_ATTEMPTS - 1:
+                time.sleep(_RETRY_DELAY_SECONDS)
+    raise last_error
+</file>
+
+<file path="tools/sql.py">
+# python/m5/tools/sql.py
+"""SQL tools for the chinook-analyst subagent.
+
+Three tools, with the database's trust boundary baked in:
+
+* ``query_chinook``    — read-only SELECTs. The connection is opened in SQLite
+  read-only URI mode AND the statement is checked to be a single SELECT, so a
+  model-generated query can never mutate or drop anything.
+* ``introspect_schema`` — returns the full DDL so the analyst can learn (and
+  then memorize) the schema on first use.
+* ``add_customer``     — the one write path: a parameterized INSERT into
+  Customer only, scoped to the logged-in rep. It is gated by a human-in-the-loop
+  approval (configured where the subagent is built), so no row is added without
+  an explicit yes.
+
+Model-generated SQL is treated as untrusted input throughout.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from pathlib import Path
+
+from langchain.tools import tool
+
+# The database ships with the agent under data/. Read path uses a read-only URI
+# so even a creative SELECT (e.g. a sqlite PRAGMA write) cannot change the file.
+DB_PATH = Path(__file__).resolve().parent.parent / "data" / "chinook.db"
+_RO_URI = f"file:{DB_PATH}?mode=ro"
+
+# The persona: Jane Peacock, Sales Support Agent. "My customers" = SupportRepId.
+REP_EMPLOYEE_ID = 3
+
+# Statements that may not appear in a read-only query, as defense in depth on
+# top of the read-only connection.
+_FORBIDDEN = (
+    "insert", "update", "delete", "drop", "alter", "create",
+    "replace", "truncate", "attach", "detach", "pragma", "vacuum",
+)
+
+
+def _read_only_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(_RO_URI, uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+@tool
+def query_chinook(sql: str) -> str:
+    """Run a read-only SQL SELECT against the Chinook database.
+
+    Returns a JSON array of row objects. Only a single SELECT statement is
+    allowed — any attempt to modify the database is rejected. Use this for all
+    lookups: catalogue prices, a customer's purchase history, territory
+    metrics, and so on.
+    """
+    stripped = sql.strip().rstrip(";").strip()
+    lowered = stripped.lower()
+
+    if not lowered.startswith(("select", "with")):
+        return json.dumps({"error": "Only SELECT queries are allowed."})
+    if ";" in stripped:
+        return json.dumps({"error": "Only a single statement is allowed."})
+    if any(f" {word} " in f" {lowered} " for word in _FORBIDDEN):
+        return json.dumps({"error": "Query contains a forbidden (write) keyword."})
+
+    conn = _read_only_connection()
+    try:
+        rows = [dict(r) for r in conn.execute(stripped).fetchall()]
+        return json.dumps(rows, default=str)
+    except sqlite3.Error as exc:
+        return json.dumps({"error": f"SQL error: {exc}"})
+    finally:
+        conn.close()
+
+
+@tool
+def introspect_schema() -> str:
+    """Return the full database schema (CREATE statements for every table).
+
+    Call this once to learn the schema, then record it in your memory so you
+    don't have to rediscover it on every task.
+    """
+    conn = _read_only_connection()
+    try:
+        rows = conn.execute(
+            "SELECT name, sql FROM sqlite_master "
+            "WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        ).fetchall()
+        return "\n\n".join(r["sql"] for r in rows if r["sql"])
+    finally:
+        conn.close()
+
+
+@tool
+def add_customer(
+    first_name: str,
+    last_name: str,
+    email: str,
+    company: str = "",
+    city: str = "",
+    state: str = "",
+    country: str = "",
+    phone: str = "",
+) -> str:
+    """Add a NEW customer to the database, assigned to the current sales rep.
+
+    Use this only after confirming the customer is not already in the system
+    (search by email or name first). A human approves this write before it
+    runs. Returns the new CustomerId on success.
+    """
+    if not email or "@" not in email:
+        return json.dumps({"error": "A valid email is required."})
+
+    # Parameterized insert into Customer only. No other table is reachable and
+    # the rep assignment is forced server-side, not taken from the model.
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        # Guard against duplicates on email.
+        existing = conn.execute(
+            "SELECT CustomerId FROM Customer WHERE lower(Email) = lower(?)", (email,)
+        ).fetchone()
+        if existing:
+            return json.dumps(
+                {"error": f"Customer with email {email} already exists "
+                          f"(CustomerId {existing[0]})."}
+            )
+
+        cursor = conn.execute(
+            """
+            INSERT INTO Customer
+                (FirstName, LastName, Company, City, State, Country, Phone,
+                 Email, SupportRepId)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                first_name,
+                last_name,
+                company or None,
+                city or None,
+                state or None,
+                country or None,
+                phone or None,
+                email,
+                REP_EMPLOYEE_ID,
+            ),
+        )
+        conn.commit()
+        return json.dumps(
+            {"status": "created", "customer_id": cursor.lastrowid,
+             "name": f"{first_name} {last_name}", "email": email}
+        )
+    except sqlite3.Error as exc:
+        return json.dumps({"error": f"SQL error: {exc}"})
+    finally:
+        conn.close()
+</file>
+
+<file path="agent.py">
+# python/m5/sales_assistant_sandbox/agent.py
+"""Chinook Sales Assistant.
+
+The entire filesystem — skills, memory, and anything the agent writes or
+runs — lives inside a per-thread LangSmith sandbox. Skills and AGENTS.md are
+seeded into the sandbox once, when it's created, from local disk. There is
+no local filesystem route the agent can read from or write to at runtime, so
+there is nothing for an untrusted execution result to bridge back to.
+
+Charts have no dedicated tool: the agent writes a Python script with
+write_file and runs it with execute (added automatically because the backend
+supports sandboxed command execution), the same way it would run any other
+generated code.
+
+Start with:
+    ./start.sh
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import os
+from pathlib import Path
+
+from async_research import build_async_research_middleware
+from deepagents import create_deep_agent
+from deepagents.backends import StateBackend
+from deepagents.backends.langsmith import LangSmithSandbox
+from langchain_core.runnables import RunnableConfig
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_quickjs import CodeInterpreterMiddleware
+from langgraph_sdk.runtime import ServerRuntime
+from subagents import build_subagents
+from tools.html import markdown_to_html
+
+from models import strong_model
+
+logger = logging.getLogger(__name__)
+
+HERE = Path(__file__).resolve().parent
+
+SYSTEM_PROMPT = (
+    "You are a sales assistant for Jane Peacock, a Sales Support Agent at "
+    "Chinook, an online music distributor. Follow your operating manual (loaded "
+    "from your memory) and use the matching playbook from /skills/ for each task.\n\n"
+    "Your entire filesystem — skills, memory, and anything you write — lives "
+    "inside an isolated sandbox; there is no separate local filesystem. To "
+    "produce a chart, write a Python script with write_file and run it with "
+    "execute. This sandbox Python is externally managed, so install packages "
+    "with `pip install --break-system-packages <package> && python3 <script>` "
+    "(e.g. `pip install --break-system-packages matplotlib && python3 "
+    "<script>`), saving the image under /outputs/."
+)
+
+MAIL_SERVER = {"transport": "streamable-http", "url": "http://127.0.0.1:5002/mcp"}
+
+_enable_search = bool(os.environ.get("TAVILY_API_KEY"))
+if not _enable_search:
+    logger.info("TAVILY_API_KEY not set — newsletter research subagent disabled.")
+
+
+def _lookup_or_create(name: str) -> tuple:
+    """Return (sandbox, freshly_created) for a thread-scoped sandbox.
+
+    Reuses a ready sandbox, restarts a stopped one, waits out a transitional
+    one, or creates a new one — same lookup pattern regardless of outcome, so
+    a thread's follow-up turns land in the same sandbox as its first.
+    """
+    from langsmith.sandbox import SandboxClient
+
+    client = SandboxClient()
+    existing = [s for s in client.list_sandboxes() if s.name == name]
+    if existing:
+        sb = existing[0]
+        status = getattr(sb, "status", "ready")
+        if status == "ready":
+            logger.info("Reusing sandbox %s", name)
+            return sb, False
+        if status == "stopped":
+            logger.info("Restarting stopped sandbox %s", name)
+            try:
+                return client.start_sandbox(name, timeout=15), False
+            except Exception as exc:
+                raise RuntimeError(
+                    "Sandbox is not available — please try again in a moment."
+                ) from exc
+        logger.info("Waiting for sandbox %s (status: %s)", name, status)
+        try:
+            return client.wait_for_sandbox(name, timeout=15), False
+        except Exception as exc:
+            raise RuntimeError(
+                "Sandbox is not available — please try again in a moment."
+            ) from exc
+    try:
+        # idle_ttl_seconds bounds compute cost if a student walks away
+        # mid-session; delete_after_stop_seconds bounds it further, since
+        # the server default (~14 days) is way more than a classroom needs
+        # a stopped sandbox to stick around for.
+        sb = client.create_sandbox(
+            name=name, idle_ttl_seconds=600, delete_after_stop_seconds=3600
+        )
+        logger.info("Created sandbox %s", name)
+        return sb, True
+    except Exception:
+        # Another thread created it between our list and our create — look it up
+        existing = [s for s in client.list_sandboxes() if s.name == name]
+        if existing:
+            logger.info("Reusing sandbox %s (race recovery)", name)
+            return existing[0], False
+        raise
+
+
+def _seed_skills_and_memory(ls_backend: LangSmithSandbox) -> None:
+    """Upload /skills and /AGENTS.md from local disk into a fresh sandbox."""
+    files: list[tuple[str, bytes]] = [("/AGENTS.md", (HERE / "AGENTS.md").read_bytes())]
+    for path in (HERE / "skills").rglob("*"):
+        if path.is_file():
+            files.append((f"/skills/{path.relative_to(HERE / 'skills')}", path.read_bytes()))
+    results = ls_backend.upload_files(files)
+    for (path, _), result in zip(files, results):
+        if result.error:
+            logger.warning("Failed to seed %s into sandbox: %s", path, result.error)
+
+
+async def _sandbox_backend_for_thread(thread_id: str) -> LangSmithSandbox:
+    """Look up (or create) this thread's sandbox and seed it if it's new."""
+    sandbox, freshly_created = await asyncio.to_thread(_lookup_or_create, f"thread-{thread_id}")
+    backend = LangSmithSandbox(sandbox)
+    if freshly_created:
+        await asyncio.to_thread(_seed_skills_and_memory, backend)
+    return backend
+
+
+# Thread-scoped sandbox pattern:
+# https://docs.langchain.com/langsmith/graph-rebuild#context-manager-factory
+#
+# The factory accepts ServerRuntime so the server can signal whether it is
+# processing an actual run (execution_runtime is non-None) or handling
+# introspection calls (get_schema, get_graph, assistants.read, …). When
+# execution_runtime is None we skip sandbox setup and fall back to an
+# in-memory backend — same graph topology, no sandbox, no real filesystem
+# access at all. Real runs get their own thread-scoped sandbox looked up by
+# thread_id.
+@contextlib.asynccontextmanager
+async def make_graph(config: RunnableConfig, runtime: ServerRuntime):
+    if runtime.execution_runtime:
+        thread_id = config.get("configurable", {}).get("thread_id")
+        backend = await _sandbox_backend_for_thread(thread_id)
+    else:
+        backend = StateBackend()
+
+    client = MultiServerMCPClient({"mock-mail": MAIL_SERVER})
+    mail_tools = await client.get_tools()
+    middleware = [CodeInterpreterMiddleware(ptc=["execute", "write_file"])]
+    if _enable_search:
+        middleware.append(build_async_research_middleware())
+    yield create_deep_agent(
+        model=strong_model,
+        tools=[markdown_to_html] + mail_tools,
+        system_prompt=SYSTEM_PROMPT,
+        subagents=build_subagents(backend, mail_tools=mail_tools),
+        skills=["/skills"],
+        memory=["/AGENTS.md"],
+        backend=backend,
+        middleware=middleware,
+        name="chinook-sales-assistant",
+    )
+</file>
+
+<file path="AGENTS.md">
+# Chinook Sales Assistant — Operating Manual
+
+*Diagnostic token: CHINOOK-READY*
+
+You are a **sales assistant** for **Jane Peacock**, a Sales Support Agent at
+Chinook, an online music distributor. You help Jane work her book of business:
+answering quote requests, keeping customer records current, researching the
+market, and reporting on her territory. You assist — Jane decides.
+
+"Her book of business" / "our customers" means the customers whose support rep
+is Jane (Employee 3).
+
+## Your specialists
+
+You coordinate; the specialists do the narrow work. Two of them are the *only*
+way to reach an external system:
+
+- **chinook-analyst** owns the database — every price lookup, customer record,
+  purchase history, and territory metric, plus adding a new customer. You have
+  no SQL yourself.
+- **inbox-manager** owns Gmail — finding and reading inbox messages and saving
+  reply drafts. You have no email tools yourself.
+- **quote-reviewer** checks a drafted quote (line items, discount, total) before
+  it goes out.
+- **newsletter-agent** researches the featured genres and assembles the
+  weekly newsletter in the background — launching it returns immediately
+  with a task ID; check back on it (`check_async_task`/`list_async_tasks`)
+  the next time Jane asks to get the finished HTML and save it.
+
+## Approvals (human-in-the-loop)
+
+Two actions wait for Jane to approve, edit, or reject before they take effect:
+
+- **Saving an email draft** (inbox-manager) — drafts are never sent, only saved
+  for Jane to review.
+- **Adding a new customer** (chinook-analyst) — no row is written without her ok.
+
+To make either happen, just delegate the step to the specialist — the approval
+appears the moment the specialist calls the tool. Don't ask Jane for permission
+in a chat message instead; if you only ask in prose, nothing gets created.
+
+## House rules
+
+- Quote money must be exact — compute totals with the code interpreter, never by
+  eyeballing. Get prices from chinook-analyst; never invent them.
+- Write finished deliverables (quotes ledger, newsletter, reports) under
+  `/outputs/`. Use timestamped file names for newsletters —
+  `newsletter-YYYY-MM-DDTHH-MM-SS.html` — not just a date, so regenerating
+  later the same day doesn't silently overwrite an earlier run.
+- If Gmail is unavailable, say so plainly and continue with what doesn't need it.
+</file>
+
+<file path="async_research.py">
+# python/m5/sales_assistant_sandbox/async_research.py
+"""AsyncSubAgentMiddleware wiring for the newsletter-agent async subagent."""
+
+from deepagents.middleware.async_subagents import AsyncSubAgentMiddleware
+
+
+def build_async_research_middleware() -> AsyncSubAgentMiddleware:
+    """`AsyncSubAgentMiddleware`, wired to the co-deployed newsletter-agent
+    graph, using the stock `start_async_task` tool unmodified — newsletter-agent
+    doesn't need any parent-thread context passed in, so there's nothing to add
+    to the launch call."""
+    return AsyncSubAgentMiddleware(
+        async_subagents=[
+            {
+                "name": "newsletter-agent",
+                "description": (
+                    "Research this week's featured music genres and assemble the "
+                    "styled HTML newsletter in the background. Launch it once per "
+                    "newsletter request and keep working; check back on it later "
+                    "with `check_async_task`/`list_async_tasks` to get the finished "
+                    "HTML."
+                ),
+                "graph_id": "newsletter-agent",
+            }
+        ]
+    )
+</file>
+
+<file path="langgraph.json">
+{
+  "dependencies": ["../.."],
+  "graphs": {
+    "agent": "./agent.py:make_graph",
+    "newsletter-agent": "./newsletter_agent_graph.py:graph"
+  },
+  "env": "../../.env"
+}
+</file>
+
+<file path="newsletter_agent_graph.py">
+# python/m5/sales_assistant_sandbox/newsletter_agent_graph.py
+"""newsletter-agent: a standalone graph, launched as an async subagent.
+
+Registered as its own entry in langgraph.json so the main agent's
+`AsyncSubAgentMiddleware` can launch it via the LangGraph SDK and return
+immediately, instead of blocking on an in-process subagent call.
+
+Unlike the earlier design (see git history: genre_researcher_graph.py), this
+graph does the FULL newsletter job itself — researching every genre and
+assembling the finished HTML — rather than being one of four parallel async
+launches the main agent has to fan back in. Internally it delegates to a
+genre-researcher subagent the ordinary, SYNCHRONOUS way (the `task` tool,
+same mechanism the main agent's other specialists use): those calls happen
+in-process, in parallel, within this graph's own single run, so there is
+nothing to fan in across threads.
+
+No completion-notification middleware here (see git history:
+completion_notifier.py) — the main agent finds out this task is done the
+ordinary way, by checking `check_async_task`/`list_async_tasks` the next time
+it's asked, rather than being woken by a cross-thread run. That's what lets
+this graph be a plain, static object instead of a per-run async factory.
+
+Storage: a `StoreBackend` namespaced by this run's own thread_id, resolved
+lazily via `get_config()` inside the namespace lambda — called only when the
+backend actually does a store operation during a real run, not at graph
+construction time, so no factory/`config` param is needed to build this
+graph. Each `start_async_task` call creates a fresh thread here, so that
+thread_id is already a unique, collision-free namespace — no cross-graph ID
+forwarding needed. Omitting `store=` resolves to `get_store()` at runtime,
+which is the same store instance the main graph uses (both graphs share one
+deployment). The genre-researcher subagent inherits this same backend
+(subagents inherit their parent's backend unless they set their own), so its
+`/research/<genre>/sources.md` dumps land in this run's own namespace too.
+"""
+
+from __future__ import annotations
+
+import os
+
+from deepagents import create_deep_agent
+from deepagents.backends.store import StoreBackend
+from langgraph.config import get_config
+from subagents import GENRE_PROMPT
+from tools.html import markdown_to_html
+
+from models import model, strong_model
+
+# This module is always imported by the langgraph platform (it's a
+# registered graph in langgraph.json) regardless of whether the main agent
+# ever exposes the launch tool for it — so importing tools.search (which
+# instantiates a Tavily client from TAVILY_API_KEY at import time) has to
+# stay conditional here too, matching agent.py's own `_enable_search` guard,
+# even though there's no factory body left to defer the import inside.
+_enable_search = bool(os.environ.get("TAVILY_API_KEY"))
+if _enable_search:
+    from tools.search import internet_search
+
+    _genre_researcher_tools = [internet_search]
+else:
+    _genre_researcher_tools = []
+
+NEWSLETTER_AGENT_PROMPT = """You assemble Chinook's weekly "This Week in \
+Music" customer newsletter. You run in the background — the sales assistant \
+already told Jane you're working and will hand her the finished result the \
+moment you're done.
+
+You will be given a list of genres to cover. For EACH genre, delegate to the \
+genre-researcher subagent — call it once per genre, all in this same turn, \
+so the research happens in parallel — and collect its returned segment.
+
+Once every genre-researcher call has returned:
+1. Assemble one Markdown document from the genres that succeeded: a \
+   "# This Week in Music" title, a one-sentence intro, then each genre's \
+   segment in the order given. If a genre's research failed, skip it and \
+   add one short line noting which genre(s) didn't make it this week — \
+   don't leave the newsletter looking unfinished, and don't silently drop \
+   the fact that something's missing. If every genre failed, don't produce \
+   a newsletter at all — reply with a single plain sentence saying research \
+   failed for every genre this week, and stop there.
+2. Call `markdown_to_html` on the assembled Markdown.
+
+Reply with ONLY the tool's returned HTML — nothing before it, nothing after \
+it, no commentary. Your reply is written directly to a file verbatim; any \
+extra sentence you add around the HTML ends up inside that file too."""
+
+_genre_researcher = {
+    "name": "genre-researcher",
+    "description": (
+        "Research one music genre and write a newsletter segment about "
+        "what's new in it. Call once per genre, in parallel."
+    ),
+    "system_prompt": GENRE_PROMPT,
+    "tools": _genre_researcher_tools,
+    "model": model,
+}
+
+_backend = StoreBackend(
+    namespace=lambda rt: (get_config()["configurable"]["thread_id"], "research")
+)
+
+graph = create_deep_agent(
+    model=strong_model,
+    tools=[markdown_to_html],
+    system_prompt=NEWSLETTER_AGENT_PROMPT,
+    subagents=[_genre_researcher],
+    backend=_backend,
+    name="newsletter-agent",
+)
+</file>
+
+<file path="start.sh">
+#!/usr/bin/env bash
+# Start the mock mail server, the chat UI, then launch langgraph dev.
+# Run from the sales_assistant_sandbox directory: ./start.sh
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# The chat UI is a Next.js app that runs in the background, so if it can't
+# start, its error scrolls past. Check what it needs up front instead.
+if ! command -v node >/dev/null 2>&1 || ! command -v pnpm >/dev/null 2>&1; then
+    echo "The chat UI needs Node.js 20 or later and pnpm." >&2
+    echo "Install Node.js from https://nodejs.org, then run: npm install -g pnpm" >&2
+    exit 1
+fi
+if ! grep -q '^LANGSMITH_API_KEY=.' "$SCRIPT_DIR/../../.env" 2>/dev/null; then
+    echo "The chat UI needs LANGSMITH_API_KEY set in python/.env." >&2
+    exit 1
+fi
+
+# Kill any leftover mail server or chat UI from a previous run.
+for PORT in 5002 3000 3001; do
+    OLD_PID=$(lsof -ti ":$PORT" 2>/dev/null || true)
+    if [ -n "$OLD_PID" ]; then
+        echo "Port $PORT already in use (PID $OLD_PID) — killing it ..."
+        kill "$OLD_PID" 2>/dev/null || true
+        sleep 1
+    fi
+done
+
+echo "Starting mock mail server on http://127.0.0.1:5002 ..."
+uv run python "$SCRIPT_DIR/mcp/mock_mail_server.py" &
+MAIL_PID=$!
+
+echo "Starting agent-chat-ui on http://localhost:3000 ..."
+AGENT_CHAT_UI_DIR="$(cd "$SCRIPT_DIR/../../../agent-chat-ui" && pwd)"
+"$AGENT_CHAT_UI_DIR/start.sh" &
+UI_PID=$!
+
+# Optional: langchain-ai/deep-agents-ui, for trying it side-by-side with
+# agent-chat-ui. Not part of the lesson — only runs if that sibling repo
+# happens to exist on this machine (~/Documents/Github/deep-agents-ui).
+# It has no async-subagent or real-sandbox file support (see m5.5 notes),
+# so the newsletter/async-task/sandbox-files features won't show up here.
+DEEP_AGENTS_UI_DIR="$HOME/Documents/Github/deep-agents-ui"
+DEEP_AGENTS_UI_PID=""
+if [ -d "$DEEP_AGENTS_UI_DIR" ]; then
+    echo "Starting deep-agents-ui on http://localhost:3001 ..."
+    (
+        cd "$DEEP_AGENTS_UI_DIR"
+        if [ ! -d node_modules ]; then
+            echo "Installing deep-agents-ui dependencies (yarn install) ..."
+            yarn install
+        fi
+        yarn dev --port 3001
+    ) &
+    DEEP_AGENTS_UI_PID=$!
+fi
+
+# Kill the mail server, the chat UI, and stop any running sandboxes on
+# Ctrl-C, normal exit, or TERM — so a student closing this script doesn't
+# keep paying for sandbox compute until idle_ttl_seconds catches up.
+cleanup() {
+    # `set -e` applies inside a trap too. On a real Ctrl-C, the mail server
+    # and chat UI are in the same process group as this script and often die
+    # from the same SIGINT before these lines run — so `kill` on an
+    # already-dead PID returns non-zero, and without `|| true` that would
+    # abort cleanup() right here, silently skipping the sandbox-stop step.
+    kill "$MAIL_PID" 2>/dev/null || true
+    kill "$UI_PID" 2>/dev/null || true
+    [ -n "$DEEP_AGENTS_UI_PID" ] && kill "$DEEP_AGENTS_UI_PID" 2>/dev/null || true
+    # pnpm/yarn run dev spawns `next dev` as a child, not a replacement,
+    # process — killing the parent PID alone can leave it (and
+    # next-server) orphaned.
+    pkill -f "next dev" 2>/dev/null || true
+    wait "$MAIL_PID" "$UI_PID" 2>/dev/null || true
+    echo "Stopping any running sandboxes ..."
+    uv run python "$SCRIPT_DIR/stop_sandboxes.py" || true
+}
+trap cleanup EXIT INT TERM
+
+# Wait until the server accepts connections (up to 10 seconds).
+for i in $(seq 1 10); do
+    if curl -s --max-time 1 http://127.0.0.1:5002/ >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+
+echo "Mail server up (PID $MAIL_PID), chat UI starting (PID $UI_PID). Starting langgraph dev ..."
+cd "$SCRIPT_DIR"
+
+# langgraph dev's local queue defaults to 1 worker slot. Async subagents
+# (genre-researcher) each hold a slot for their whole run, so the default
+# starves the main thread of a slot to handle new messages while they're
+# in flight — see docs.langchain.com/oss/python/deepagents/async-subagents.
+uv run langgraph dev --n-jobs-per-worker 10
+</file>
+
+<file path="stop_sandboxes.py">
+"""Stop this lesson's running sandboxes.
+
+Run on shutdown by start.sh so a student closing langgraph dev stops
+billing for sandbox compute immediately, instead of waiting out
+idle_ttl_seconds. Only touches sandboxes named "thread-*" (this project's
+naming convention from agent.py) that are currently "ready" — never touches
+other sandboxes in the workspace.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from dotenv import dotenv_values
+from langsmith.sandbox import SandboxClient
+
+# Load the key explicitly from python/.env rather than relying on the
+# ambient shell environment, which may hold an unrelated LANGSMITH_API_KEY
+# (e.g. from an outer shell/session) that silently points at the wrong
+# workspace — this bit us once already when building this lesson.
+ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+
+
+def main() -> None:
+    api_key = dotenv_values(ENV_PATH).get("LANGSMITH_API_KEY")
+    client = SandboxClient(api_key=api_key)
+    targets = [
+        sb
+        for sb in client.list_sandboxes()
+        if sb.name.startswith("thread-") and getattr(sb, "status", None) == "ready"
+    ]
+    for sb in targets:
+        try:
+            client.stop_sandbox(sb.name)
+            print(f"Stopped sandbox {sb.name}")
+        except Exception as exc:
+            print(f"Could not stop sandbox {sb.name}: {exc}")
+
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="subagents.py">
+# python/m5/subagents.py
+"""The specialist subagents for the Chinook Sales Assistant.
+
+They are built by a function rather than defined at import time because the
+chinook-analyst's MemoryMiddleware needs the *same* filesystem backend the main
+agent uses (so the schema it discovers and the memory it reads point at the same
+file on disk).
+
+- chinook-analyst — owns the database; self-bootstraps the schema into its own
+  AGENTS.md; gates new-customer writes behind human approval.
+- inbox-manager   — owns the mail (MCP) tools; gates saving a draft behind
+  human approval. Only present when mail tools were discovered.
+- quote-reviewer  — sanity-checks a drafted quote before it's sent.
+
+genre-researcher itself is still an in-process (synchronous) subagent, but not
+of the main agent — it's used inside newsletter-agent, a standalone graph
+(see `newsletter_agent_graph.py`) launched via `AsyncSubAgentMiddleware` so
+the whole newsletter job (research + assembly) runs in the background
+instead of blocking the main agent. `GENRE_PROMPT` stays in this module and
+is imported from there.
+
+Why the inbox-manager lives in a subagent: the general-purpose subagent (always present)
+inherits the *main* agent's tools, so any gated tool placed on the main agent
+could be invoked ungated through delegation. Keeping `mail_create_draft` and
+`add_customer` solely on gated specialists means the only path to either write
+runs through its human-approval gate.
+"""
+
+from __future__ import annotations
+
+from deepagents import MemoryMiddleware
+from deepagents.backends.protocol import BackendProtocol
+from tools.sql import add_customer, introspect_schema, query_chinook
+
+from models import model, strong_model
+
+# Allow all three agent-inbox decisions on the gated write.
+_APPROVE_EDIT_REJECT = {"allowed_decisions": ["approve", "edit", "reject"]}
+
+
+# The last paragraph is for weaker models, which tend to guess table names
+# (e.g. "invoices" for Invoice); it keeps them on schema-derived names.
+ANALYST_PROMPT = """You are the chinook-analyst, the data specialist for the \
+Chinook Sales Assistant. You are the only agent that touches the database.
+
+Detailed operating instructions and the database schema live in your memory \
+(loaded automatically). Follow them. In short: answer with exact figures from \
+`query_chinook`, learn the schema once with `introspect_schema` and record it \
+in your memory, and use `add_customer` only when asked to add a genuinely new \
+customer (a human approves that write).
+
+Use only table and column names exactly as they appear in your memory or in \
+`introspect_schema` output. Chinook names are singular (`Invoice`, not \
+`invoices`). If a query fails with "no such table" or "no such column", \
+call `introspect_schema` and retry; never guess a name."""
+
+INBOX_PROMPT = """You are the inbox-manager, the email specialist for the \
+Chinook Sales Assistant. You own Jane's inbox and are the only agent that \
+touches it.
+
+Your tools (MCP, prefixed with the server name "mail"):
+- `mail_list_messages` — list inbox messages (optionally filtered by a query).
+- `mail_read_message` — read one message in full by id.
+- `mail_create_draft` — save a reply to the drafts folder. It NEVER sends.
+
+When asked to find or read mail, return a tight summary the caller can act on \
+(sender, subject, and the key content) — not the raw dump.
+
+When asked to save a draft, just call `mail_create_draft` with the given \
+recipient, subject, and body. Saving a draft pauses automatically for Jane to \
+approve, edit, or reject — that pause IS the approval, so don't ask for \
+permission in prose first; make the call. Never invent a send tool; you only \
+ever create drafts."""
+
+REVIEWER_PROMPT = """You are the quote-reviewer. You receive a drafted quote — \
+line items (description, quantity, unit price, line total), any discount, and \
+the grand total — and you check it before it goes to the customer.
+
+Verify:
+- The arithmetic: quantity x unit price for each line, and the grand total.
+- Internal consistency: any stated discount is actually applied; nothing is \
+double-counted or missing.
+- Plausibility: unit prices look like catalogue prices (tracks are normally \
+about $0.99); totals aren't off by an order of magnitude.
+
+Reply concisely: either "Looks correct" with a one-line confirmation, or a \
+short list of specific corrections. Do not rewrite the customer email — just \
+review the numbers and terms."""
+
+GENRE_PROMPT = """You are a music journalist researching one genre for an \
+online music distributor's weekly newsletter.
+
+You will be given a single genre and a private research folder to work in.
+
+How to work:
+1. Use internet_search to find recent, noteworthy developments in that genre \
+   — new releases, notable artists, trends, or events. Run a few searches.
+2. Save the COMPLETE, verbatim output of ALL your searches to a single file: \
+   write_file("/research/<genre>/sources.md", ...). Do NOT summarize or trim. \
+   This keeps the bulky material out of the editor's context.
+3. Only then, from what you found, write one tight newsletter segment.
+
+Return ONLY the finished segment as your reply:
+- A markdown section: a "## <Genre>" heading followed by ~120-180 words.
+- Lively but factual; name specific artists and releases.
+- Do NOT paste raw search results into your reply — those live in your files."""
+
+
+def build_subagents(
+    backend: BackendProtocol,
+    *,
+    mail_tools: list,
+) -> list[dict]:
+    """Return the subagent specs, wired to the shared filesystem backend."""
+
+    chinook_analyst = {
+        "name": "chinook-analyst",
+        "description": (
+            "Query the Chinook database for catalogue prices, customer records, "
+            "purchase history, and territory metrics, and add new customers "
+            "(with approval). Delegate all database work here."
+        ),
+        "system_prompt": ANALYST_PROMPT,
+        "tools": [query_chinook, introspect_schema, add_customer],
+        "model": model,
+        # Per-subagent memory: its own AGENTS.md, on the same backend the main
+        # agent uses, so the schema it writes is the schema it later reads.
+        "middleware": [
+            MemoryMiddleware(
+                backend=backend,
+                sources=["/agents/chinook-analyst/AGENTS.md"],
+            )
+        ],
+        # The one gated write — pauses for human approval before inserting.
+        "interrupt_on": {"add_customer": _APPROVE_EDIT_REJECT},
+    }
+
+    quote_reviewer = {
+        "name": "quote-reviewer",
+        "description": (
+            "Review a drafted quote (line items, discount, total) for correct "
+            "arithmetic and sane pricing before it is sent. Send it the numbers."
+        ),
+        "system_prompt": REVIEWER_PROMPT,
+        "model": strong_model,
+    }
+
+    inbox_manager = {
+        "name": "inbox-manager",
+        "description": (
+            "Read Jane's inbox and save reply drafts. Delegate any "
+            "email work here: finding/reading messages and creating a "
+            "draft reply (which pauses for Jane's approval)."
+        ),
+        "system_prompt": INBOX_PROMPT,
+        "tools": mail_tools,
+        "model": model,
+        "interrupt_on": {"mail_create_draft": _APPROVE_EDIT_REJECT},
+    }
+
+    return [chinook_analyst, quote_reviewer, inbox_manager]
+</file>
+
+</files>
