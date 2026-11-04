@@ -1,0 +1,395 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+channels/
+  slack.py
+sandbox/
+  __init__.py
+  setup.sh
+skills/
+  qbr-report/
+    SKILL.md
+.env.example
+agent.py
+identity.py
+instructions.md
+pyproject.toml
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="channels/slack.py">
+# python/m6/dvd_rental_analyst/channels/slack.py
+"""Lets people @mention the agent in Slack.
+
+The bare call is enough for a first deploy. The options below are all optional.
+
+With this file present, `mda deploy` prints an authorization link near the end.
+Approving it lets LangSmith create the Slack app, install it, and point its
+Events endpoint at the deployment. The bot token is stored as a workspace
+connection (`mda connections list`), so it stays out of .env.
+
+Press Enter at that prompt to skip it; the deploy finishes with Slack events
+disabled and you can authorize on a later deploy.
+"""
+
+from managed_deepagents import channels
+
+channel = channels.slack()
+
+# Available options (managed-deepagents 0.8.3), all optional:
+#
+#   channels.slack(
+#       name="dvd-rental-analyst",        # display name in Slack, 1-35 characters
+#       description="Answers DVD rental business questions",  # up to 139 characters
+#       icon="icon.png",                  # 512x512 PNG under channels/, max 1 MB (generated if omitted)
+#       background_color="#1F2937",       # app background, #RRGGBB
+#       trigger_on_all_messages=False,    # True: every channel message starts a run, not just @mentions
+#       allow_bot_triggers=False,         # True: let other bots trigger the agent
+#   )
+</file>
+
+<file path="sandbox/__init__.py">
+from managed_deepagents import define_sandbox
+
+sandbox = define_sandbox()
+</file>
+
+<file path="sandbox/setup.sh">
+#!/usr/bin/env bash
+set -euo pipefail
+
+pip install --quiet --break-system-packages pandas matplotlib
+
+curl -s -o /tmp/sakila-schema.sql https://raw.githubusercontent.com/jOOQ/sakila/main/sqlite-sakila-db/sqlite-sakila-schema.sql
+curl -s -o /tmp/sakila-data.sql https://raw.githubusercontent.com/jOOQ/sakila/main/sqlite-sakila-db/sqlite-sakila-insert-data.sql
+sqlite3 sakila.db < /tmp/sakila-schema.sql
+sqlite3 sakila.db < /tmp/sakila-data.sql
+rm -f /tmp/sakila-schema.sql /tmp/sakila-data.sql
+
+# The public Sakila sample only has English films and dates from 2005-2006.
+# Diversify some films into other languages, and shift dates into a recent
+# window so "this quarter"/"last quarter" resolve sensibly in a live demo.
+sqlite3 sakila.db <<'SQL'
+UPDATE film SET language_id = 5 WHERE film_id BETWEEN 1 AND 120;   -- French
+UPDATE film SET language_id = 2 WHERE film_id BETWEEN 121 AND 200; -- Italian
+UPDATE film SET language_id = 3 WHERE film_id BETWEEN 201 AND 250; -- Japanese
+
+UPDATE rental SET
+  rental_date = datetime(rental_date, '+7595 days'),
+  return_date = datetime(return_date, '+7595 days');
+UPDATE payment SET payment_date = datetime(payment_date, '+7595 days');
+
+-- customer.create_date is a record-creation stamp, not a real signup date, and
+-- sits after the rental window in the source data. Pin it before all shifted
+-- rental activity so customers don't appear to rent before they existed.
+UPDATE customer SET create_date = '2026-01-01 00:00:00';
+
+-- The source data also stamps a batch of still-checked-out rentals with its
+-- generation timestamp instead of a real date; after the shift that lands in
+-- the future, so pull those back to a recent, still-open-looking date.
+UPDATE rental SET rental_date = '2026-08-10 15:16:03' WHERE rental_date > '2026-08-15';
+UPDATE payment SET payment_date = '2026-08-10 15:16:03' WHERE payment_date > '2026-08-15';
+
+-- A handful of source payments are recorded at $0.00 (comped rentals), which
+-- reads like a data error to anyone doing quick revenue math. Bump them to a
+-- nominal amount so every payment is a real transaction.
+UPDATE payment SET amount = 0.99 WHERE amount <= 0;
+SQL
+
+mkdir -p artifacts
+</file>
+
+<file path="skills/qbr-report/SKILL.md">
+---
+name: qbr-report
+description: Generate a Quarterly Business Review (QBR) report for the DVD rental business, covering revenue and rental volume with breakdowns by film language, category (genre), and actor. Use whenever someone asks for a QBR, a quarterly report, or a quarterly business review.
+---
+
+# QBR report
+
+A QBR summarizes revenue and rental activity for a quarter and breaks it down by
+language, category, and actor so a stakeholder can see what drove the numbers.
+
+## Which quarter
+
+If the user names a quarter (e.g. "Q2 2026"), use it. Otherwise use the most
+recently completed calendar quarter relative to today's date.
+
+## What to compute
+
+Run SQL against `sakila.db` for the chosen date range (`rental.rental_date` /
+`payment.payment_date`) to get:
+
+1. **Overview** — total revenue (`SUM(payment.amount)`), total rentals
+   (`COUNT(DISTINCT rental_id)`, not a count of payment rows: a rental can have
+   more than one payment, e.g. a late fee), and how both compare to the prior
+   quarter.
+2. **Revenue by language** — join `payment` → `rental` → `inventory` → `film`
+   → `language`, group by `language.name`.
+3. **Revenue by category (genre)** — join the same chain through
+   `film_category` → `category`, group by `category.name`. A film can have
+   more than one category; report each film's revenue once per category it
+   belongs to.
+4. **Top actors by revenue** — join through `film_actor` → `actor`, group by
+   actor, and rank by revenue from films they appear in. A film can have
+   multiple actors, so the same rental can contribute to several actors'
+   totals.
+
+## Report format
+
+Write the report as markdown with these sections, in order: Overview,
+Revenue by Language, Revenue by Category, Top Actors. Use a ranked list or
+small table for each breakdown (top 5 is enough per section) and call out
+the single biggest mover from the prior quarter in the Overview.
+</file>
+
+<file path=".env.example">
+# Copy to .env and fill in. Never commit .env.
+#
+# mda reads .env, uses LANGSMITH_API_KEY for LangSmith, and forwards your model
+# provider key as a deployment secret.
+
+LANGSMITH_API_KEY=
+ANTHROPIC_API_KEY=
+
+# Optional: target a specific workspace on deploy.
+# LANGSMITH_WORKSPACE_ID=
+
+# Slack needs nothing here. Authorize at the Connect Slack prompt during
+# mda deploy, and the bot token is stored as a workspace connection.
+</file>
+
+<file path="agent.py">
+from langchain.tools import tool
+from managed_deepagents import define_deep_agent
+
+
+@tool
+def email_report(to: str, subject: str, body: str) -> str:
+    """Email a report to a stakeholder. This simulates a send, no network call is made."""
+    return f"Emailed {to}: {subject}"
+
+
+agent = define_deep_agent(
+    name="dvd-rental-analyst",
+    model="anthropic:claude-sonnet-5",
+    tools=[email_report],
+)
+</file>
+
+<file path="identity.py">
+from managed_deepagents import define_identity, auth
+
+identity = define_identity(auth=auth.langsmith_api_key())
+</file>
+
+<file path="instructions.md">
+# DVD Rental Analyst
+
+You are a data analyst for a DVD rental chain. You answer business questions
+by writing and running SQL and Python against `sakila.db`, a SQLite database
+in your sandbox.
+
+## Database
+
+`sakila.db` is the Sakila sample database: a DVD rental chain with 2 stores,
+599 customers, 1,000 films, and 34,262 rentals. Inspect it directly (e.g.
+`sqlite3 sakila.db ".schema"`) rather than trusting this cheat sheet blindly,
+but here's the shape of it:
+
+- `film`: `film_id`, `title`, `rental_rate`, `rental_duration`, `length`, `rating`
+- `category`: `category_id`, `name`
+- `film_category` (join table): `film_id`, `category_id`
+- `actor`: `actor_id`, `first_name`, `last_name`
+- `film_actor` (join table): `film_id`, `actor_id`
+- `inventory` (one row per physical copy): `inventory_id`, `film_id`, `store_id`
+- `rental`: `rental_id`, `rental_date`, `return_date`, `inventory_id`, `customer_id`, `staff_id`
+- `payment`: `payment_id`, `customer_id`, `rental_id`, `amount`, `payment_date`
+- `customer`: `customer_id`, `store_id`, `first_name`, `last_name`, `address_id`, `active`
+- `store`: `store_id`, `manager_staff_id`, `address_id`
+
+Common joins:
+- Revenue over time → `payment.payment_date`, `payment.amount`
+- A film's category → `film` → `film_category` → `category`
+- A film's actors → `film` → `film_actor` → `actor`
+- Which store a rental happened at → `rental` → `inventory` → `store`
+- Revenue by store → `payment` → `rental` → `inventory` → `store`
+
+## What to produce
+
+For every question:
+1. Query the database to get the numbers.
+2. Do any further analysis in Python in the sandbox if the question calls for it
+   (aggregation, comparison, trend — whatever the raw SQL doesn't already answer).
+3. Summarize the answer in 1-2 sentences. Lead with the number.
+
+Keep it that concise: a couple of sentences, not a report. No charts or
+image files — just the numbers and the analysis.
+</file>
+
+<file path="pyproject.toml">
+[project]
+name = "dvd-rental-analyst"
+version = "0.0.0"
+description = "A Managed Deep Agent project."
+requires-python = ">=3.11"
+dependencies = [
+    "managed-deepagents==0.8.3",
+    "langsmith"
+]
+</file>
+
+<file path="README.md">
+# DVD Rental Analyst (Managed Deep Agents)
+
+A data analyst for a DVD rental chain. It answers business questions by writing
+SQL and Python against `sakila.db` in a managed sandbox, and it can produce a
+Quarterly Business Review on demand.
+
+This is the project Module 6 deploys. MDA supplies the backend, store, and
+checkpointer, and the database is built inside a per-thread sandbox rather than
+read from the repo.
+
+> **Public beta.** MDA runs on LangSmith Cloud in the **US region only**. You
+> need a LangSmith Cloud account and an API key.
+
+## What's here
+
+| Path | What it does |
+|---|---|
+| `agent.py` | The agent definition: name, model, and the `email_report` tool |
+| `instructions.md` | The system prompt, including the Sakila schema cheat sheet. Editable live in Context Hub |
+| `sandbox/__init__.py` | `define_sandbox()` |
+| `sandbox/setup.sh` | Installs pandas and matplotlib, then builds `sakila.db` |
+| `skills/qbr-report/SKILL.md` | The QBR playbook. Also editable in Context Hub |
+| `identity.py` | Who can call the deployment |
+| `channels/slack.py` | Lets people `@mention` the agent in Slack. Authorize once during a deploy; LangSmith builds the app |
+| `pyproject.toml` | Dependencies |
+
+`sakila.db` is not in the repo. `sandbox/setup.sh` downloads the Sakila schema
+and data from [jOOQ/sakila](https://github.com/jOOQ/sakila) and builds the
+database in the sandbox on first use, so there is no 9 MB binary to check in.
+
+## Setup
+
+```bash
+cd python/m6/dvd_rental_analyst
+cp .env.example .env     # then fill in your keys
+```
+
+Install the SDK and the `mda` CLI. Both ship in the
+[`managed-deepagents`](https://pypi.org/project/managed-deepagents/) package on
+PyPI, which `pyproject.toml` pins to the version this project was built against:
+
+```bash
+uv sync
+uv run mda --version
+```
+
+Run every `mda` command through `uv run` so it uses that pinned version. No
+`uv`? Install it from [docs.astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/).
+
+## Deploy it
+
+```bash
+uv run mda deploy .
+```
+
+That prints an Agent Server URL and a LangSmith dashboard URL. Open the
+dashboard URL, click **Connect**, then **Open in Studio** to chat with it.
+
+Near the end of `mda deploy`, a **Connect Slack** prompt appears with an
+authorization link. Press Enter to skip it and the deploy finishes with Slack
+events disabled. Approving it lets LangSmith create the Slack app, install it
+in your workspace, and point its Events endpoint at the deployment. The bot
+token is stored as a workspace connection, visible with `mda connections list`,
+so it stays out of `.env`.
+
+## Try these
+
+- "What were our top 5 categories by revenue last quarter?"
+- "Which store is doing better, and by how much?"
+- "Generate the QBR."
+
+Then edit `instructions.md` in Context Hub, add a persona, and ask the same
+question again in the same chat. The tone changes with no redeploy.
+
+## About the data
+
+The public Sakila sample only contains English-language films and dates from
+2005-2006. `sandbox/setup.sh` shifts all rental and payment dates forward so
+"this quarter" resolves sensibly, spreads some films across French, Italian,
+and Japanese, and cleans up a few `$0.00` comped payments. The numbers are
+therefore not comparable to anyone else's Sakila queries; they are shaped for
+a live demo.
+
+## Tear down
+
+```bash
+uv run mda delete .
+```
+
+Removes the deployment, its tracing project, its Context Hub repo, and any
+sandboxes it created. Memory and thread history are not recoverable afterward.
+
+Note that the deployment **name stays reserved for about 7 days** after a
+delete. To redeploy sooner, use a different name:
+
+```bash
+uv run mda deploy . --name dvd-rental-analyst-2
+```
+
+## Caveat
+
+MDA is in public beta and its SDK moves quickly. This project is pinned to
+`managed-deepagents==0.8.3`; `define_deep_agent`, `define_sandbox`,
+`define_identity`, `auth.langsmith_api_key()`, and `channels.slack()` were
+checked against that version. If you install a newer version and a call
+doesn't match, the
+[Managed Deep Agents docs](https://docs.langchain.com/langsmith/managed-deep-agents)
+are the source of truth.
+</file>
+
+</files>
