@@ -1,0 +1,47 @@
+import os
+import httpx
+from langgraph_sdk import Auth
+
+auth = Auth()
+
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_SECRET_KEY = os.environ["SUPABASE_SECRET_KEY"]
+
+
+@auth.authenticate
+async def get_current_user(authorization: str | None) -> Auth.types.MinimalUserDict:
+    if not authorization:
+        raise Auth.exceptions.HTTPException(status_code=401, detail="Missing token")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer":
+        raise Auth.exceptions.HTTPException(status_code=401, detail="Invalid scheme")
+    try:
+        print("➡️ @auth.authenticate: calling Supabase to validate token")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{SUPABASE_URL}/auth/v1/user",  # Supabase authentication endpoint
+                headers={
+                    "Authorization": authorization,      # verifies the user
+                    "apiKey": SUPABASE_SECRET_KEY,      # authenticates this handler to Supabase
+                },
+            )
+            response.raise_for_status()
+            user = response.json()
+            print(f"✅ authenticated: {user['email']}")
+            return {
+                "identity": user["id"],
+                "email": user["email"],
+                "is_authenticated": True,
+            }
+    except Exception as e:
+        print(f"❌ authentication failed: {e}")
+        raise Auth.exceptions.HTTPException(status_code=401, detail=str(e))
+
+
+@auth.on
+async def add_owner(ctx: Auth.types.AuthContext, value: dict):
+    print(f"🔒 @auth.on: scoping to owner={ctx.user.identity[:8]}...")
+    filters = {"owner": ctx.user.identity}
+    metadata = value.setdefault("metadata", {})
+    metadata.update(filters)  # written to metadata on write/create actions
+    return filters

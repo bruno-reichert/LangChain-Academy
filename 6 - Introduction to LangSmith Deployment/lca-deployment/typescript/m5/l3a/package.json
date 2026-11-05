@@ -1,0 +1,32 @@
+{
+  "name": "m5-l3a",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpx @langchain/langgraph-cli dev",
+    "client": "tsx client.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.1.42",
+    "@langchain/langgraph": "^1.2.9",
+    "@langchain/langgraph-sdk": "^1.0.0",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {
+    "@langchain/langgraph-cli": "^1.0.0",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@langchain/langgraph>uuid": "11.1.1",
+      "@langchain/langgraph-api>uuid": "11.1.1",
+      "@langchain/langgraph-checkpoint>uuid": "11.1.1"
+    }
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
