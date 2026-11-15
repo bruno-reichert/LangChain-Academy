@@ -1,0 +1,381 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+agent/
+  __init__.py
+  graph.py
+hw/
+  pyproject.toml
+hw_answers/
+  agent/
+    __init__.py
+    graph.py
+  auth.py
+  langgraph.json
+  pyproject.toml
+  README.md
+.env.example
+auth.py
+client.py
+langgraph.json
+m5-l2-hw.py
+pyproject.toml
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="agent/__init__.py">
+
+</file>
+
+<file path="agent/graph.py">
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, START, MessagesState, StateGraph
+
+
+def chat(state: MessagesState, config: RunnableConfig) -> dict:
+    user = config["configurable"].get("langgraph_auth_user", {})
+    identity = user.get("identity", "unknown")
+    last = state["messages"][-1].content
+    return {"messages": [AIMessage(content=f"[{identity}] {last}")]}
+
+
+graph = StateGraph(MessagesState)
+graph.add_node("chat", chat)
+graph.add_edge(START, "chat")
+graph.add_edge("chat", END)
+graph = graph.compile()
+</file>
+
+<file path="hw/pyproject.toml">
+[project]
+name = "m5-l2-hw"
+version = "0.1.0"
+requires-python = ">=3.11,<3.14"
+
+dependencies = [
+    "langgraph>=1.0.0,<2.0",
+    "langchain-core>=1.3.0,<2.0",
+    "langgraph-sdk",
+    "langgraph-cli[inmem]>=0.4.0",
+]
+</file>
+
+<file path="hw_answers/agent/__init__.py">
+
+</file>
+
+<file path="hw_answers/agent/graph.py">
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, START, MessagesState, StateGraph
+
+
+def chat(state: MessagesState, config: RunnableConfig) -> dict:
+    user = config["configurable"].get("langgraph_auth_user", {})
+    user_info = ", ".join(f"{k}={v}" for k, v in user.items())
+    last = state["messages"][-1].content
+    return {"messages": [AIMessage(content=f"[{user_info}] {last}")]}
+
+
+graph = StateGraph(MessagesState)
+graph.add_node("chat", chat)
+graph.add_edge(START, "chat")
+graph.add_edge("chat", END)
+graph = graph.compile()
+</file>
+
+<file path="hw_answers/auth.py">
+from langgraph_sdk import Auth
+
+# Stand-in for a real user database. Do not use hardcoded tokens in production.
+VALID_TOKENS = {
+    "alice-token": {"id": "user1", "name": "Alice"},
+    "bob-token":   {"id": "user2", "name": "Bob"},
+}
+
+auth = Auth()
+
+
+@auth.authenticate
+async def get_current_user(authorization: str | None) -> Auth.types.MinimalUserDict:
+    """Validate the bearer token and return the authenticated user."""
+    if not authorization:
+        raise Auth.exceptions.HTTPException(status_code=401, detail="Missing token")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or token not in VALID_TOKENS:
+        raise Auth.exceptions.HTTPException(status_code=401, detail="Invalid token")
+    return {
+        "identity": VALID_TOKENS[token]["id"],
+        "name":     VALID_TOKENS[token]["name"],
+        "role":     "student",
+    }
+</file>
+
+<file path="hw_answers/langgraph.json">
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./agent/graph.py:graph"
+  },
+  "auth": {
+    "path": "./auth.py:auth"
+  }
+}
+</file>
+
+<file path="hw_answers/pyproject.toml">
+[project]
+name = "m5-l2-hw-answers"
+version = "0.1.0"
+requires-python = ">=3.11,<3.14"
+
+dependencies = [
+    "langgraph>=1.0.0,<2.0",
+    "langchain-core>=1.3.3,<2.0",
+    "langgraph-sdk",
+    "langgraph-cli[inmem]>=0.4.0",
+]
+</file>
+
+<file path="hw_answers/README.md">
+# Lesson 2 Homework — Answer Key
+
+This is a working solution to the Lesson 2 homework. The two changes from the base lesson are:
+
+- **`auth.py`** — returns `name` and `role` in addition to `identity`
+- **`agent/graph.py`** — uses `name` and `role` from the user dict in the response
+
+## Run the server
+
+```bash
+cd python/m5/l2/hw_answers
+langgraph dev --no-browser
+```
+
+No `.env` file is needed — this lesson uses no environment variables.
+
+## Run the client
+
+In a second terminal, run the existing lesson client:
+
+```bash
+cd python/m5/l2
+uv run client.py
+```
+
+## Expected output
+
+```
+✅ Unknown token correctly blocked: Invalid token
+✅ Alice created thread: <thread-id>
+✅ Response: [identity=user1, name=Alice, role=student] Hello from Alice!
+✅ Bob created thread: <thread-id>
+```
+
+The response prints every field in the user dict — whatever you return from `auth.py` shows up automatically. Add more fields and they appear without touching `graph.py`.
+</file>
+
+<file path=".env.example">
+# Lesson 2 requires no environment variables — hardcoded tokens are used for auth.
+# Copy this file to .env before running: cp .env.example .env
+</file>
+
+<file path="auth.py">
+from langgraph_sdk import Auth
+
+# Stand-in for a real user database. Do not use hardcoded tokens in production.
+VALID_TOKENS = {
+    "alice-token": {"id": "user1", "name": "Alice"},
+    "bob-token":   {"id": "user2", "name": "Bob"},
+}
+
+auth = Auth()
+
+
+@auth.authenticate
+async def get_current_user(authorization: str | None) -> Auth.types.MinimalUserDict:
+    """Validate the bearer token and return the authenticated user."""
+    if not authorization:
+        raise Auth.exceptions.HTTPException(status_code=401, detail="Missing token")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or token not in VALID_TOKENS:
+        raise Auth.exceptions.HTTPException(status_code=401, detail="Invalid token")
+    return {
+        "identity": VALID_TOKENS[token]["id"],
+    }
+</file>
+
+<file path="client.py">
+"""
+Test client for Lesson 2 — run with: uv run python client.py
+Requires the server to be running: langgraph dev --no-browser
+"""
+
+import asyncio
+from langgraph_sdk import get_client
+
+URL = "http://localhost:2024"
+
+
+async def main():
+    # --- Unknown token: not in VALID_TOKENS, should be blocked ---
+    hacker = get_client(url=URL, headers={"Authorization": "Bearer hacker-token"})
+    try:
+        await hacker.threads.create()
+        print("❌ Should have been blocked!")
+    except Exception as e:
+        print(f"✅ Unknown token correctly blocked: {e}")
+
+    # --- Valid token (Alice) ---
+    alice = get_client(url=URL, headers={"Authorization": "Bearer alice-token"})
+    thread = await alice.threads.create()
+    print(f"✅ Alice created thread: {thread['thread_id']}")
+
+    result = await alice.runs.wait(
+        thread["thread_id"], "agent",
+        input={"messages": [{"role": "user", "content": "Hello from Alice!"}]},
+    )
+    print(f"✅ Response: {result['messages'][-1]['content']}")
+
+    # --- Valid token (Bob) ---
+    bob = get_client(url=URL, headers={"Authorization": "Bearer bob-token"})
+    thread = await bob.threads.create()
+    print(f"✅ Bob created thread: {thread['thread_id']}")
+
+    # --- Bob can see Alice's thread! No @auth.on means no isolation ---
+    bob_view = await bob.threads.search()
+    print(f"⚠️  Bob can see {len(bob_view)} thread(s) — including Alice's.")
+    print("   Authentication confirmed who Bob is, but didn't scope what he sees.")
+    print("   m5.3 fixes this with @auth.on.")
+
+
+asyncio.run(main())
+</file>
+
+<file path="langgraph.json">
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./agent/graph.py:graph"
+  },
+  "auth": {
+    "path": "./auth.py:auth"
+  },
+  "env": ".env"
+}
+</file>
+
+<file path="m5-l2-hw.py">
+"""
+Lesson 2 Homework — run with: uv run m5-l2-hw.py
+
+Part 1: Pass name through the auth pipeline
+--------------------------------------------
+Before running, make two small changes:
+
+  auth.py — add "name" to the returned dict:
+
+      return {
+          "identity": user_data["id"],
+          "name":     user_data["name"],
+      }
+
+  agent/graph.py — use name in the response:
+
+      name = user.get("name", identity)
+      return {"messages": [AIMessage(content=f"[{name}] {last}")]}
+
+Part 2: Authentication is not authorization
+--------------------------------------------
+No changes needed — just run and observe.
+"""
+
+import asyncio
+from langgraph_sdk import get_client
+
+URL = "http://localhost:2024"
+
+
+async def main():
+    alice = get_client(url=URL, headers={"Authorization": "Bearer alice-token"})
+    bob   = get_client(url=URL, headers={"Authorization": "Bearer bob-token"})
+
+    # --- Part 1: name flows from auth.py into the graph ---
+    thread = await alice.threads.create()
+    result = await alice.runs.wait(
+        thread["thread_id"], "agent",
+        input={"messages": [{"role": "user", "content": "Hello!"}]},
+    )
+    print(f"✅ Part 1 — Alice's response: {result['messages'][-1]['content']}")
+    print("   Expected: [Alice] Hello!  (not [user1] Hello!)")
+
+    # --- Part 2: authentication is not authorization ---
+    alice_thread = await alice.threads.create()
+    print(f"\n   Alice created thread: {alice_thread['thread_id']}")
+
+    bob_view = await bob.threads.get(alice_thread["thread_id"])
+    print(f"✅ Part 2 — Bob read Alice's thread: {bob_view['thread_id']}")
+    print("   Bob is authenticated as user2, but nothing stopped him reading Alice's data.")
+    print("   @auth.on — added in the next lesson — is what closes this gap.")
+
+
+asyncio.run(main())
+</file>
+
+<file path="pyproject.toml">
+[project]
+name = "m5-l2"
+version = "0.1.0"
+requires-python = ">=3.11,<3.14"
+
+dependencies = [
+    "langgraph>=1.0.0,<2.0",
+    "langchain-core>=1.3.3,<2.0",
+    "langgraph-sdk",
+    "langgraph-cli[inmem]>=0.4.0",
+]
+</file>
+
+</files>
