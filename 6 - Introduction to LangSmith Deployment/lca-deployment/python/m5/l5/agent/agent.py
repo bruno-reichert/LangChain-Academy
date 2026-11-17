@@ -26,9 +26,8 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 # ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
-model = init_chat_model("anthropic:claude-sonnet-4-6")
-# model = init_chat_model("openai:gpt-4o")
-# model = init_chat_model("google_genai:gemini-2.5-flash")
+model = init_chat_model("google_genai:gemini-3.5-flash")
+
 
 
 # ---------------------------------------------------------------------------
