@@ -1,6 +1,6 @@
 [agent]
 name = "deep_tutor"
-model = "anthropic:claude-sonnet-4-6"
+model = "google_genai:gemini-3.5-flash-lite"
 
 # [sandbox] is optional. Omit if not needed for skills or code execution.
 # [sandbox]
